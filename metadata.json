@@ -1,0 +1,6 @@
+{
+  "name": "Catálogo Viral Pro - Crecimiento en Redes",
+  "description": "Catálogo de promociones y servicios de crecimiento para Spotify, Facebook, Instagram, TikTok, YouTube y Kick con pedidos automáticos a WhatsApp y asistente virtual.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
