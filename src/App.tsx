@@ -9,9 +9,11 @@ import { MultiOrderCartModal } from './components/MultiOrderCartModal';
 import { ChatBot } from './components/ChatBot';
 import { PaymentMethods } from './components/PaymentMethods';
 import { InstructionsModal } from './components/InstructionsModal';
+import { AdminSessionModal } from './components/AdminSessionModal';
+import { SessionProvider } from './context/SessionContext';
 import { SERVICES_DATA, WHATSAPP_DISPLAY, buildWhatsAppLink } from './data/catalogData';
 import { ServiceItem, CartItem } from './types/catalog';
-import { MessageCircle, Bot, ShoppingBag, ArrowUp, FileText } from 'lucide-react';
+import { MessageCircle, Bot, ShoppingBag, FileText, ShieldCheck } from 'lucide-react';
 
 export default function App() {
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -19,6 +21,7 @@ export default function App() {
   const [isBotOpen, setIsBotOpen] = useState(false);
   const [isCalculatorModalOpen, setIsCalculatorModalOpen] = useState(false);
   const [isInstructionsOpen, setIsInstructionsOpen] = useState(false);
+  const [isAdminModalOpen, setIsAdminModalOpen] = useState(false);
   const [activeCategory, setActiveCategory] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
 
@@ -113,17 +116,19 @@ export default function App() {
   const generalWaUrl = buildWhatsAppLink('¡Hola! Quiero consultar precios y hacer un pedido de crecimiento para mis redes sociales.');
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col selection:bg-purple-600 selection:text-white">
-      {/* Top Navbar */}
-      <Navbar
-        cartCount={cartCount}
-        cartTotal={cartTotal}
-        onOpenCart={() => setIsCartOpen(true)}
-        onOpenCalculator={scrollToCalculator}
-        onOpenBot={() => setIsBotOpen(true)}
-        onScrollToOffers={scrollToOffers}
-        onOpenInstructions={() => setIsInstructionsOpen(true)}
-      />
+    <SessionProvider>
+      <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col selection:bg-purple-600 selection:text-white">
+        {/* Top Navbar */}
+        <Navbar
+          cartCount={cartCount}
+          cartTotal={cartTotal}
+          onOpenCart={() => setIsCartOpen(true)}
+          onOpenCalculator={scrollToCalculator}
+          onOpenBot={() => setIsBotOpen(true)}
+          onScrollToOffers={scrollToOffers}
+          onOpenInstructions={() => setIsInstructionsOpen(true)}
+          onOpenAdminModal={() => setIsAdminModalOpen(true)}
+        />
 
       {/* Hero Section */}
       <Hero
@@ -253,6 +258,14 @@ export default function App() {
               <FileText className="w-3.5 h-3.5" />
               <span>Instructivo PDF</span>
             </button>
+            <span className="text-zinc-700">•</span>
+            <button
+              onClick={() => setIsAdminModalOpen(true)}
+              className="text-amber-400 hover:text-amber-300 font-bold transition cursor-pointer flex items-center gap-1"
+            >
+              <ShieldCheck className="w-3.5 h-3.5" />
+              <span>Acceso Admin (1 a la vez)</span>
+            </button>
           </div>
         </div>
       </footer>
@@ -313,10 +326,17 @@ export default function App() {
         onOpenCalculator={scrollToCalculator}
       />
 
-      <InstructionsModal
-        isOpen={isInstructionsOpen}
-        onClose={() => setIsInstructionsOpen(false)}
-      />
-    </div>
+        <InstructionsModal
+          isOpen={isInstructionsOpen}
+          onClose={() => setIsInstructionsOpen(false)}
+        />
+
+        <AdminSessionModal
+          isOpen={isAdminModalOpen}
+          onClose={() => setIsAdminModalOpen(false)}
+          onOpenInstructions={() => setIsInstructionsOpen(true)}
+        />
+      </div>
+    </SessionProvider>
   );
 }

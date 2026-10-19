@@ -26,9 +26,7 @@ import {
   BINANCE_PAY_ID, 
   PAGO_MOVIL_DATA 
 } from '../data/catalogData';
-
-const ADMIN_PASSWORD = '1987';
-const STORAGE_KEY = 'growth_viral_admin_pass_1987';
+import { useSession } from '../context/SessionContext';
 
 interface InstructionsModalProps {
   isOpen: boolean;
@@ -36,29 +34,33 @@ interface InstructionsModalProps {
 }
 
 export const InstructionsModal: React.FC<InstructionsModalProps> = ({ isOpen, onClose }) => {
+  const {
+    isAdmin: isAdminUnlocked,
+    isAdminOccupiedByOther,
+    activeAdminUserNumber,
+    totalUsers,
+    myUserNumber,
+    loginAdmin,
+    logoutAdmin,
+  } = useSession();
+
   const [activeTab, setActiveTab] = useState<'how' | 'client' | 'admin' | 'whatsapp' | 'requirements'>('how');
   const [isDownloading, setIsDownloading] = useState(false);
   const [copiedScript, setCopiedScript] = useState<string | null>(null);
-
-  // Authentication state
-  const [isAdminUnlocked, setIsAdminUnlocked] = useState<boolean>(() => {
-    try {
-      return sessionStorage.getItem(STORAGE_KEY) === 'true';
-    } catch {
-      return false;
-    }
-  });
 
   // Modal / prompt for locked action (download / print / direct unlock)
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [authModalTarget, setAuthModalTarget] = useState<'download' | 'print' | 'tab-admin' | 'tab-whatsapp' | 'general'>('general');
   const [pinInput, setPinInput] = useState('');
   const [pinError, setPinError] = useState(false);
+  const [pinErrorMessage, setPinErrorMessage] = useState('Contraseña incorrecta. Inténtalo de nuevo.');
   const [showPin, setShowPin] = useState(false);
+  const [isVerifyingPin, setIsVerifyingPin] = useState(false);
 
   // Inline PIN input for Tab lock screen
   const [inlinePin, setInlinePin] = useState('');
   const [inlinePinError, setInlinePinError] = useState(false);
+  const [inlinePinErrorMessage, setInlinePinErrorMessage] = useState('Contraseña incorrecta. Inténtalo de nuevo.');
   const [showInlinePin, setShowInlinePin] = useState(false);
 
   if (!isOpen) return null;
@@ -99,16 +101,14 @@ export const InstructionsModal: React.FC<InstructionsModalProps> = ({ isOpen, on
     }
   };
 
-  // Unlock verification for modal dialog
-  const handleVerifyAuthModal = (e?: React.FormEvent) => {
+  // Unlock verification for modal dialog (with server-backed 1-admin-at-a-time check)
+  const handleVerifyAuthModal = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (pinInput.trim() === ADMIN_PASSWORD) {
-      setIsAdminUnlocked(true);
-      try {
-        sessionStorage.setItem(STORAGE_KEY, 'true');
-      } catch (err) {
-        console.error(err);
-      }
+    setIsVerifyingPin(true);
+    const result = await loginAdmin(pinInput);
+    setIsVerifyingPin(false);
+
+    if (result.ok) {
       setIsAuthModalOpen(false);
       setPinError(false);
       const target = authModalTarget;
@@ -126,18 +126,17 @@ export const InstructionsModal: React.FC<InstructionsModalProps> = ({ isOpen, on
       }
     } else {
       setPinError(true);
+      setPinErrorMessage(result.message);
     }
   };
 
-  // Unlock verification for inline tab lock screen
-  const handleVerifyInline = (targetTab?: 'admin' | 'whatsapp') => {
-    if (inlinePin.trim() === ADMIN_PASSWORD) {
-      setIsAdminUnlocked(true);
-      try {
-        sessionStorage.setItem(STORAGE_KEY, 'true');
-      } catch (err) {
-        console.error(err);
-      }
+  // Unlock verification for inline tab lock screen (with server-backed 1-admin-at-a-time check)
+  const handleVerifyInline = async (targetTab?: 'admin' | 'whatsapp') => {
+    setIsVerifyingPin(true);
+    const result = await loginAdmin(inlinePin);
+    setIsVerifyingPin(false);
+
+    if (result.ok) {
       setInlinePin('');
       setInlinePinError(false);
       if (targetTab) {
@@ -145,17 +144,13 @@ export const InstructionsModal: React.FC<InstructionsModalProps> = ({ isOpen, on
       }
     } else {
       setInlinePinError(true);
+      setInlinePinErrorMessage(result.message);
     }
   };
 
-  // Re-lock manually
-  const handleLockAgain = () => {
-    setIsAdminUnlocked(false);
-    try {
-      sessionStorage.removeItem(STORAGE_KEY);
-    } catch (err) {
-      console.error(err);
-    }
+  // Re-lock manually & release exclusive Admin slot
+  const handleLockAgain = async () => {
+    await logoutAdmin();
     if (activeTab === 'admin' || activeTab === 'whatsapp') {
       setActiveTab('how');
     }
@@ -210,17 +205,25 @@ Para confirmar la tasa para Pago Móvil (BDV 0102) o Binance Pay (ID: ${BINANCE_
                 {isAdminUnlocked ? (
                   <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
                     <Unlock className="w-3 h-3 text-emerald-400" />
-                    Admin Desbloqueado
+                    Admin Activo (1/1 • Usuario #{myUserNumber})
+                  </span>
+                ) : isAdminOccupiedByOther ? (
+                  <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30 font-mono">
+                    <ShieldAlert className="w-3 h-3 text-rose-400" />
+                    Admin Ocupado (1/1 por Usuario #{activeAdminUserNumber ?? 1})
                   </span>
                 ) : (
                   <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 font-mono">
                     <Lock className="w-3 h-3 text-amber-400" />
-                    Protegido (Clave: ****)
+                    Modo Normal • Clave Admin: ****
                   </span>
                 )}
+                <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full bg-zinc-800 text-cyan-300 border border-zinc-700">
+                  👥 {totalUsers} en línea
+                </span>
               </div>
               <p className="text-xs text-zinc-400">
-                Guía completa: Cómo se usa, Qué ve el Cliente, Qué ves Tú y Qué te llega por WhatsApp.
+                Guía completa: Cómo se usa, Qué ve el Cliente, Qué ves Tú y Qué te llega por WhatsApp. (Cierre automático al cerrar página).
               </p>
             </div>
           </div>
@@ -230,11 +233,11 @@ Para confirmar la tasa para Pago Móvil (BDV 0102) o Binance Pay (ID: ${BINANCE_
             {isAdminUnlocked ? (
               <button
                 onClick={handleLockAgain}
-                className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-zinc-800/80 hover:bg-zinc-800 text-zinc-400 hover:text-white text-xs font-semibold border border-zinc-700/60 transition cursor-pointer"
-                title="Volver a bloquear opciones de administrador"
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-rose-950/60 hover:bg-rose-900/70 text-rose-300 hover:text-white text-xs font-semibold border border-rose-500/40 transition cursor-pointer"
+                title="Cerrar sesión de Administrador y volver a modo usuario normal"
               >
-                <Lock className="w-3.5 h-3.5 text-amber-400" />
-                <span>Bloquear</span>
+                <Lock className="w-3.5 h-3.5 text-rose-400" />
+                <span>Cerrar Admin</span>
               </button>
             ) : (
               <button
@@ -248,7 +251,7 @@ Para confirmar la tasa para Pago Móvil (BDV 0102) o Binance Pay (ID: ${BINANCE_
                 title="Desbloquear opciones de Administrador con contraseña"
               >
                 <KeyRound className="w-3.5 h-3.5 text-amber-400" />
-                <span>Desbloquear Admin</span>
+                <span>{isAdminOccupiedByOther ? 'Admin en Uso (1/1)' : 'Desbloquear Admin'}</span>
               </button>
             )}
 
@@ -589,24 +592,34 @@ Para confirmar la tasa para Pago Móvil (BDV 0102) o Binance Pay (ID: ${BINANCE_
                       </button>
                     </div>
 
+                    {isAdminOccupiedByOther && (
+                      <div className="p-3 rounded-xl bg-rose-950/50 border border-rose-500/40 text-xs text-rose-300 font-semibold flex items-center justify-center gap-2">
+                        <ShieldAlert className="w-4 h-4 text-rose-400 shrink-0" />
+                        <span>
+                          Actualmente el Usuario #{activeAdminUserNumber ?? 1} está conectado como Administrador (máximo 1 a la vez).
+                        </span>
+                      </div>
+                    )}
+
                     {inlinePinError && (
                       <div className="flex items-center justify-center gap-1.5 text-xs text-red-400 font-semibold animate-shake">
-                        <AlertCircle className="w-4 h-4" />
-                        <span>Contraseña incorrecta. Inténtalo de nuevo.</span>
+                        <AlertCircle className="w-4 h-4 shrink-0" />
+                        <span>{inlinePinErrorMessage}</span>
                       </div>
                     )}
 
                     <button
                       type="submit"
-                      className="w-full py-3 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-zinc-950 font-black text-sm shadow-lg shadow-amber-950/40 transition cursor-pointer active:scale-95"
+                      disabled={isVerifyingPin}
+                      className="w-full py-3 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 disabled:opacity-50 text-zinc-950 font-black text-sm shadow-lg shadow-amber-950/40 transition cursor-pointer active:scale-95"
                     >
-                      Desbloquear Sección Admin
+                      {isVerifyingPin ? 'Verificando...' : 'Desbloquear Sección Admin (1 a la vez)'}
                     </button>
                   </form>
 
                   <div className="text-[11px] text-zinc-500 flex items-center justify-center gap-1.5 font-mono">
                     <ShieldAlert className="w-3.5 h-3.5 text-amber-400/80" />
-                    <span>Clave protegida: <strong className="text-zinc-400">****</strong></span>
+                    <span>Clave protegida: <strong className="text-zinc-400">****</strong> • Cierre automático al salir</span>
                   </div>
                 </div>
               ) : (
@@ -731,24 +744,34 @@ Para confirmar la tasa para Pago Móvil (BDV 0102) o Binance Pay (ID: ${BINANCE_
                       </button>
                     </div>
 
+                    {isAdminOccupiedByOther && (
+                      <div className="p-3 rounded-xl bg-rose-950/50 border border-rose-500/40 text-xs text-rose-300 font-semibold flex items-center justify-center gap-2">
+                        <ShieldAlert className="w-4 h-4 text-rose-400 shrink-0" />
+                        <span>
+                          Actualmente el Usuario #{activeAdminUserNumber ?? 1} está conectado como Administrador (máximo 1 a la vez).
+                        </span>
+                      </div>
+                    )}
+
                     {inlinePinError && (
                       <div className="flex items-center justify-center gap-1.5 text-xs text-red-400 font-semibold animate-shake">
-                        <AlertCircle className="w-4 h-4" />
-                        <span>Contraseña incorrecta. Inténtalo de nuevo.</span>
+                        <AlertCircle className="w-4 h-4 shrink-0" />
+                        <span>{inlinePinErrorMessage}</span>
                       </div>
                     )}
 
                     <button
                       type="submit"
-                      className="w-full py-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-sm shadow-lg shadow-emerald-950/40 transition cursor-pointer active:scale-95"
+                      disabled={isVerifyingPin}
+                      className="w-full py-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:opacity-50 text-white font-black text-sm shadow-lg shadow-emerald-950/40 transition cursor-pointer active:scale-95"
                     >
-                      Desbloquear Guiones de WhatsApp
+                      {isVerifyingPin ? 'Verificando...' : 'Desbloquear Guiones de WhatsApp (1 a la vez)'}
                     </button>
                   </form>
 
                   <div className="text-[11px] text-zinc-500 flex items-center justify-center gap-1.5 font-mono">
                     <ShieldAlert className="w-3.5 h-3.5 text-emerald-400/80" />
-                    <span>Clave protegida: <strong className="text-zinc-400">****</strong></span>
+                    <span>Clave protegida: <strong className="text-zinc-400">****</strong> • Cierre automático al salir</span>
                   </div>
                 </div>
               ) : (
@@ -1058,10 +1081,19 @@ Para confirmar la tasa para Pago Móvil (BDV 0102) o Binance Pay (ID: ${BINANCE_
                 </div>
               </div>
 
+              {isAdminOccupiedByOther && (
+                <div className="flex items-start gap-2 text-xs text-rose-300 font-semibold bg-rose-950/50 border border-rose-500/40 p-2.5 rounded-xl">
+                  <ShieldAlert className="w-4 h-4 shrink-0 text-rose-400 mt-0.5" />
+                  <span>
+                    El Usuario #{activeAdminUserNumber ?? 1} ya está conectado como Administrador. Solo se permite 1 Administrador conectado a la vez.
+                  </span>
+                </div>
+              )}
+
               {pinError && (
                 <div className="flex items-center gap-1.5 text-xs text-red-400 font-semibold bg-red-950/40 border border-red-900/50 p-2.5 rounded-xl">
                   <AlertCircle className="w-4 h-4 shrink-0 text-red-400" />
-                  <span>Contraseña incorrecta. Inténtalo de nuevo.</span>
+                  <span>{pinErrorMessage}</span>
                 </div>
               )}
 
@@ -1075,16 +1107,17 @@ Para confirmar la tasa para Pago Móvil (BDV 0102) o Binance Pay (ID: ${BINANCE_
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-zinc-950 font-black text-xs shadow-lg shadow-amber-950/40 transition cursor-pointer active:scale-95"
+                  disabled={isVerifyingPin}
+                  className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 disabled:opacity-50 text-zinc-950 font-black text-xs shadow-lg shadow-amber-950/40 transition cursor-pointer active:scale-95"
                 >
-                  Desbloquear
+                  {isVerifyingPin ? 'Verificando...' : 'Desbloquear'}
                 </button>
               </div>
             </form>
 
             <div className="text-center">
               <span className="text-[11px] text-zinc-500 font-mono">
-                Clave de acceso requerida: <strong className="text-zinc-400">****</strong>
+                Clave de acceso requerida: <strong className="text-zinc-400">****</strong> • Cierre automático al cerrar página
               </span>
             </div>
           </div>
