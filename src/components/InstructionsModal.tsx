@@ -974,7 +974,7 @@ Para confirmar la tasa para Pago Móvil (BDV 0102) o Binance Pay (ID: ${BINANCE_
             <span className="hidden sm:inline">• Binance ID:</span>
             <strong className="text-white hidden sm:inline">{BINANCE_PAY_ID}</strong>
             <span className="hidden md:inline">• Clave Admin:</span>
-            <span className="text-amber-400/90 font-mono font-bold hidden md:inline">1987</span>
+            <span className="text-amber-400/90 font-mono font-bold hidden md:inline">****</span>
           </div>
 
           <div className="flex items-center gap-3 w-full sm:w-auto">
