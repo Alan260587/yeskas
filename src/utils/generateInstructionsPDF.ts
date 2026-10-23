@@ -1,11 +1,11 @@
 import { jsPDF } from 'jspdf';
-import { 
-  WHATSAPP_DISPLAY, 
-  BINANCE_PAY_ID, 
-  PAGO_MOVIL_DATA 
-} from '../data/catalogData';
+import { DEFAULT_PAYMENT_CONFIG } from '../data/catalogData';
+import { PaymentConfig } from '../types/catalog';
 
-export function generateInstructionsPDF() {
+export function generateInstructionsPDF(paymentConfig: PaymentConfig = DEFAULT_PAYMENT_CONFIG) {
+  const whatsappDisplay = paymentConfig.whatsappDisplay;
+  const binancePayId = paymentConfig.binancePayId;
+  const pagoMovil = paymentConfig.pagoMovil;
   const doc = new jsPDF({
     orientation: 'portrait',
     unit: 'mm',
@@ -63,7 +63,7 @@ export function generateInstructionsPDF() {
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(7.5);
     doc.setTextColor(zinc500[0], zinc500[1], zinc500[2]);
-    doc.text(`WhatsApp de Ventas: ${WHATSAPP_DISPLAY} | Binance ID: ${BINANCE_PAY_ID} | Pago Móvil BDV`, margin, pageHeight - 9);
+    doc.text(`WhatsApp de Ventas: ${whatsappDisplay} | Binance ID: ${binancePayId} | Pago Móvil ${pagoMovil.bankCode}`, margin, pageHeight - 9);
 
     doc.setFont('helvetica', 'bold');
     doc.text(`Página ${currentPage} de ${totalPages}`, pageWidth - margin, pageHeight - 9, { align: 'right' });
@@ -209,9 +209,9 @@ export function generateInstructionsPDF() {
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
   doc.setTextColor(228, 228, 231);
-  doc.text(`• WhatsApp Oficial de Ventas: ${WHATSAPP_DISPLAY}`, margin + 6, infoY + 14);
-  doc.text(`• Binance Pay ID Oficial: ${BINANCE_PAY_ID} (Pagos en USDT sin comisiones)`, margin + 6, infoY + 20);
-  doc.text(`• Pago Móvil: ${PAGO_MOVIL_DATA.bank} (${PAGO_MOVIL_DATA.bankCode}) | Tlf: ${PAGO_MOVIL_DATA.phone} | C.I.: ${PAGO_MOVIL_DATA.id}`, margin + 6, infoY + 26);
+  doc.text(`• WhatsApp Oficial de Ventas: ${whatsappDisplay}`, margin + 6, infoY + 14);
+  doc.text(`• Binance Pay ID Oficial: ${binancePayId} (Pagos en USDT sin comisiones)`, margin + 6, infoY + 20);
+  doc.text(`• Pago Móvil: ${pagoMovil.bank} (${pagoMovil.bankCode}) | Tlf: ${pagoMovil.phone} | C.I.: ${pagoMovil.id}`, margin + 6, infoY + 26);
 
   addFooter();
 
@@ -412,7 +412,7 @@ export function generateInstructionsPDF() {
   doc.text('GARANTÍA VISIBLE PARA EL CLIENTE:', margin + 4, curY + 8);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7.6);
-  doc.text('El cliente ve que los servicios no requieren contraseña, tienen 30 días de garantía de reposición y se activan en un plazo de 12 a 24 horas hábiles.', margin + 4, curY + 14);
+  doc.text('El cliente ve que los servicios no requieren contraseña, tienen 30 días de garantía de reposición y permiten elegir Modo Express (48 a 72 horas) o Modo Progresivo (7 días en adelante).', margin + 4, curY + 14);
 
   addFooter();
 
@@ -449,16 +449,16 @@ export function generateInstructionsPDF() {
       desc: 'Cuando un cliente te envía su mensaje con su diagnóstico, ves al segundo si solo le faltan seguidores o también likes y comentarios. Esto te permite ofrecerle un "Pack de Retención" o "Interacciones Extra" para aumentar el ticket promedio de compra.',
     },
     {
-      title: '3. Canales de Cobro Pre-Configurados',
-      desc: 'La app ya le informa al cliente que puedes cobrar mediante:\n• Binance Pay (ID: 965190483): Cero comisiones en USDT, instantáneo para clientes internacionales y nacionales.\n• Pago Móvil: Banco de Venezuela (0102), tlf 04242934550, CI 28525460. Tú solo indicas la tasa del día para calcular los Bolívares.',
+      title: '3. Canales de Cobro Editables en Tiempo Real',
+      desc: `La app le informa al cliente que puedes cobrar mediante:\n• Binance Pay (ID: ${binancePayId}): Cero comisiones en USDT, instantáneo para clientes internacionales y nacionales.\n• Pago Móvil: ${pagoMovil.bank} (${pagoMovil.bankCode}), tlf ${pagoMovil.phone}, CI ${pagoMovil.id}. Tú solo indicas la tasa del día para calcular los Bolívares.`,
     },
     {
-      title: '4. Recepción de Enlace Verificado',
-      desc: 'El cliente ya adjunta su enlace en el mensaje de WhatsApp. Solo tienes que hacer clic para abrir el perfil/canal, revisar que el contenido sea público y apto para monetizar, y confirmar la orden.',
+      title: '4. Recepción de Enlace Verificado y Registro en Historial',
+      desc: 'El cliente ya adjunta su enlace en el mensaje de WhatsApp y el pedido queda registrado automáticamente en el Historial de Pedidos del Panel Admin.',
     },
     {
-      title: '5. Coordinación del Despacho y Monitoreo',
-      desc: 'Una vez recibido el capture del pago, programas la entrega (progresiva de 3 a 5 días para mayor naturalidad algorítmica o express en 24-48h). Respaldas la orden con la garantía de 30 días de reposición.',
+      title: '5. Coordinación del Ritmo de Entrega (Express o Progresivo)',
+      desc: 'Una vez recibido el capture del pago, programas la entrega según el modo elegido: Modo Express (48 a 72 horas) o Modo Progresivo (7 días en adelante para máxima naturalidad algorítmica), con garantía de 30 días.',
     },
   ];
 
@@ -544,13 +544,13 @@ export function generateInstructionsPDF() {
     '• Horas de reproducción: 1,200h ➜ Faltan: 2,800h (Meta: 4,000h)',
     '• Suscriptores: 350 subs ➜ Faltan: 650 subs (Meta: 1,000 subs)',
     '📦 PAQUETES DEL CATÁLOGO PARA MONETIZAR (CON GARANTÍA):',
-    '1. 3,000 Horas de Reproducción YouTube (Garantía 30 días) ➜ $65 USD',
-    '2. 1,000 Suscriptores Reales YouTube (Garantía 30 días) ➜ $35 USD',
+    '1. 1x 3,000 Horas de Reproducción YouTube (Progresivo 7d+) ➜ $65 USD',
+    '2. 1x 1,000 Suscriptores Reales YouTube (Express 48-72h) ➜ $35 USD',
     '────────────────────────────────────────────────────────────',
     '💰 PRESUPUESTO TOTAL ESTIMADO: $100 USD',
     '🤝 Quiero ponerme de acuerdo contigo por aquí:',
-    'Para confirmar la tasa para Pago Móvil (BDV 0102) o Binance Pay (ID: 965190483),',
-    'coordinar el inicio progresivo y recibir el soporte. ¡Quedo atento!',
+    `Para confirmar la tasa para Pago Móvil (${pagoMovil.bankCode}) o Binance Pay (ID: ${binancePayId}),`,
+    'coordinar el inicio (Express 48-72h o Progresivo 7d+) y recibir el soporte. ¡Quedo atento!',
   ];
 
   let sampleY = curY + 13;
@@ -575,11 +575,11 @@ export function generateInstructionsPDF() {
     },
     {
       paso: 'Respuesta 2 (Cotización de Pago):',
-      texto: '"¿Prefieres cancelar por Binance Pay en USDT ($100 neto sin comisión a mi ID 965190483) o por Pago Móvil del Banco de Venezuela a la tasa del día?"',
+      texto: `"¿Prefieres cancelar por Binance Pay en USDT ($100 neto sin comisión a mi ID ${binancePayId}) o por Pago Móvil (${pagoMovil.bank} ${pagoMovil.bankCode}) a la tasa del día?"`,
     },
     {
       paso: 'Respuesta 3 (Inicio de Campaña):',
-      texto: '"Una vez envíes el comprobante, activamos la entrega en las próximas horas de forma progresiva para proteger y hacer crecer tu canal con total seguridad."',
+      texto: '"Una vez envíes el comprobante, activamos la entrega en el ritmo elegido (Modo Express 48 a 72h o Modo Progresivo 7 días en adelante) con garantía de 30 días."',
     },
   ];
 

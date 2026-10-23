@@ -16,7 +16,8 @@ import {
   Zap,
   Info
 } from 'lucide-react';
-import { WHATSAPP_DISPLAY, BINANCE_PAY_ID, buildWhatsAppLink } from '../data/catalogData';
+import { buildWhatsAppLink } from '../data/catalogData';
+import { useCatalogConfig } from '../context/CatalogConfigContext';
 
 export type SupportedPlatform = 'youtube' | 'tiktok' | 'instagram' | 'facebook' | 'kick' | 'spotify';
 
@@ -182,6 +183,7 @@ export const ROICalculator: React.FC<ROICalculatorProps> = ({
   channelOrAccountUrl = '',
   onConsultPlan,
 }) => {
+  const { paymentConfig } = useCatalogConfig();
   const [isOpen, setIsOpen] = useState(true);
   const [showExplanation, setShowExplanation] = useState(false);
 
@@ -252,9 +254,9 @@ export const ROICalculator: React.FC<ROICalculatorProps> = ({
       `⚡ *Tiempo estimado de retorno (Payback):* ¡Aproximadamente ${calculations.daysToPayback} días!\n` +
       `📈 *ROI estimado primer año:* +${calculations.roiPercentage}% de rendimiento\n` +
       `─────────────────────────\n` +
-      `🤝 Quiero adquirir el paquete de $${packageInvestmentUSD} USD para comenzar a monetizar cuanto antes. ¿Coordinamos por Binance ID (${BINANCE_PAY_ID}) o Pago Móvil?`;
+      `🤝 Quiero adquirir el paquete de $${packageInvestmentUSD} USD para comenzar a monetizar cuanto antes. ¿Coordinamos por Binance ID (${paymentConfig.binancePayId}) o Pago Móvil (${paymentConfig.pagoMovil.bankCode})?`;
 
-    const url = buildWhatsAppLink(text);
+    const url = buildWhatsAppLink(text, paymentConfig.whatsappPhone);
     window.open(url, '_blank');
   };
 

@@ -1,12 +1,14 @@
 import React from 'react';
-import { MessageCircle, ShieldCheck, Zap, Youtube, CheckCircle2, ShoppingBag, Sparkles, FileText } from 'lucide-react';
-import { WHATSAPP_DISPLAY, buildWhatsAppLink } from '../data/catalogData';
+import { MessageCircle, ShieldCheck, Zap, Youtube, CheckCircle2, ShoppingBag, Sparkles, FileText, FileUp } from 'lucide-react';
+import { buildWhatsAppLink } from '../data/catalogData';
+import { useCatalogConfig } from '../context/CatalogConfigContext';
 
 interface HeroProps {
   onOpenCalculator: () => void;
   onOpenCart: () => void;
   onSelectCategory: (category: string) => void;
   onOpenInstructions?: () => void;
+  onOpenUploadPdfs?: () => void;
 }
 
 export const Hero: React.FC<HeroProps> = ({
@@ -14,8 +16,13 @@ export const Hero: React.FC<HeroProps> = ({
   onOpenCart,
   onSelectCategory,
   onOpenInstructions,
+  onOpenUploadPdfs,
 }) => {
-  const generalWaUrl = buildWhatsAppLink('¡Hola! Vengo de la web y quiero consultar precios y disponibilidad para mis redes sociales.');
+  const { paymentConfig } = useCatalogConfig();
+  const generalWaUrl = buildWhatsAppLink(
+    '¡Hola! Vengo de la web y quiero consultar precios y disponibilidad para mis redes sociales.',
+    paymentConfig.whatsappPhone
+  );
 
   return (
     <section className="relative overflow-hidden pt-8 pb-12 sm:pt-12 sm:pb-16 bg-gradient-to-b from-zinc-950 via-zinc-900 to-zinc-950 text-white border-b border-zinc-800/80">
@@ -31,7 +38,7 @@ export const Hero: React.FC<HeroProps> = ({
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
             <span className="font-semibold text-emerald-400">Atención Activa</span>
             <span className="text-zinc-500">•</span>
-            <span>Contacto Directo WhatsApp: {WHATSAPP_DISPLAY}</span>
+            <span>Contacto Directo WhatsApp: {paymentConfig.whatsappDisplay}</span>
           </div>
 
           {/* Main Title */}
@@ -43,7 +50,7 @@ export const Hero: React.FC<HeroProps> = ({
           </h1>
 
           <p className="text-base sm:text-lg text-zinc-300 mb-6 font-normal">
-            Estrategias diseñadas para hacerte crecer de forma rápida y segura. Selecciona varios servicios, arma tu pedido consolidado y contrata al instante por WhatsApp.
+            Estrategias diseñadas para hacerte crecer de forma rápida y segura. Selecciona varios servicios, elige ritmo Express (48-72h) o Progresivo (7d+) y contrata al instante por WhatsApp.
           </p>
 
           {/* Key Trust Highlights */}
@@ -54,16 +61,16 @@ export const Hero: React.FC<HeroProps> = ({
             </div>
             <div className="flex items-center gap-1.5 bg-zinc-900/80 px-3 py-1 rounded-full border border-zinc-800">
               <Zap className="w-4 h-4 text-amber-400" />
-              <span>Entrega Rápida</span>
+              <span>Express (48 a 72h) o Progresivo (7d+)</span>
             </div>
             <div className="flex items-center gap-1.5 bg-zinc-900/80 px-3 py-1 rounded-full border border-zinc-800">
               <CheckCircle2 className="w-4 h-4 text-cyan-400" />
-              <span>Binance (ID: 965190483) / Pago Móvil por WhatsApp</span>
+              <span>Binance (ID: {paymentConfig.binancePayId}) / Pago Móvil ({paymentConfig.pagoMovil.bankCode})</span>
             </div>
           </div>
 
           {/* Primary Action Buttons */}
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-3 sm:gap-4 mb-8">
+          <div className="flex flex-col sm:flex-row items-center justify-center flex-wrap gap-3 sm:gap-4 mb-8">
             <a
               href={generalWaUrl}
               target="_blank"
@@ -71,7 +78,7 @@ export const Hero: React.FC<HeroProps> = ({
               className="w-full sm:w-auto inline-flex items-center justify-center gap-2.5 px-6 py-3.5 rounded-xl text-sm font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-700/25 transition-all transform active:scale-95"
             >
               <MessageCircle className="w-5 h-5 fill-white" />
-              <span>Escribir al WhatsApp ({WHATSAPP_DISPLAY})</span>
+              <span>Escribir al WhatsApp ({paymentConfig.whatsappDisplay})</span>
             </a>
 
             <button
@@ -97,6 +104,16 @@ export const Hero: React.FC<HeroProps> = ({
               >
                 <FileText className="w-5 h-5 text-indigo-400" />
                 <span>Instructivo PDF Oficial</span>
+              </button>
+            )}
+
+            {onOpenUploadPdfs && (
+              <button
+                onClick={onOpenUploadPdfs}
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-2.5 px-6 py-3.5 rounded-xl text-sm font-bold bg-emerald-950/80 hover:bg-emerald-900/90 border border-emerald-500/50 text-emerald-300 transition-all cursor-pointer active:scale-95"
+              >
+                <FileUp className="w-5 h-5 text-emerald-400" />
+                <span>Subir y Guardar PDFs (1 a 10)</span>
               </button>
             )}
           </div>

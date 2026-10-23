@@ -1,37 +1,27 @@
 import React, { useState, useMemo } from 'react';
-import { 
-  Youtube, 
-  Sparkles, 
-  CheckCircle2, 
-  MessageCircle, 
-  ArrowRight, 
-  ShieldCheck, 
-  Clock, 
-  Users, 
-  Flame, 
+import {
+  Sparkles,
+  CheckCircle2,
+  MessageCircle,
+  ArrowRight,
+  ShieldCheck,
+  Clock,
   HelpCircle,
-  Music,
-  Share2,
-  Tv,
-  Eye,
-  Radio,
   Zap,
   ShoppingBag,
   Check,
-  Tag,
   FileText,
-  Download
+  Plus,
+  Minus,
 } from 'lucide-react';
-import { ServiceItem } from '../types/catalog';
-import { 
-  WHATSAPP_DISPLAY, 
-  BINANCE_PAY_ID, 
-  buildWhatsAppLink, 
+import { ServiceItem, DeliverySpeedMode } from '../types/catalog';
+import {
+  buildWhatsAppLink,
   buildUniversalMonetizationPlanWhatsAppMessage,
-  PAGO_MOVIL_DATA 
 } from '../data/catalogData';
 import { ROICalculator } from './ROICalculator';
 import { generateInstructionsPDF } from '../utils/generateInstructionsPDF';
+import { useCatalogConfig } from '../context/CatalogConfigContext';
 
 type PlatformKey = 'youtube' | 'tiktok' | 'instagram' | 'facebook' | 'kick' | 'spotify';
 
@@ -288,7 +278,7 @@ const PLATFORMS_CONFIG: PlatformConfig[] = [
 interface YouTubeMonetizationCalculatorProps {
   onClose?: () => void;
   isModal?: boolean;
-  onAddToCart?: (service: ServiceItem) => void;
+  onAddToCart?: (service: ServiceItem, quantity?: number) => void;
   onOpenInstructions?: () => void;
 }
 
@@ -311,9 +301,16 @@ export const YouTubeMonetizationCalculator: React.FC<YouTubeMonetizationCalculat
   onAddToCart,
   onOpenInstructions,
 }) => {
+  const { getDiagnosticPrice, services, paymentConfig, recordOrder } = useCatalogConfig();
+
   const [selectedPlatform, setSelectedPlatform] = useState<PlatformKey>('youtube');
-  const [deliverySpeed, setDeliverySpeed] = useState<'express' | 'progressive'>('express');
+  const [deliverySpeed, setDeliverySpeed] = useState<DeliverySpeedMode>('express');
   const [addedPackageId, setAddedPackageId] = useState<string | null>(null);
+  const [addedAllBanner, setAddedAllBanner] = useState(false);
+
+  // Multi-package selection & quantity per package (Base C)
+  const [deselectedPackages, setDeselectedPackages] = useState<Record<string, boolean>>({});
+  const [packageQuantities, setPackageQuantities] = useState<Record<string, number>>({});
 
   const [accountUrls, setAccountUrls] = useState<Record<PlatformKey, string>>({
     youtube: '',
@@ -324,7 +321,6 @@ export const YouTubeMonetizationCalculator: React.FC<YouTubeMonetizationCalculat
     spotify: '',
   });
 
-  // State values for each platform's sliders
   const [metricValues, setMetricValues] = useState<Record<string, number>>({
     'youtube-hours': 1200,
     'youtube-subs': 350,
@@ -363,11 +359,20 @@ export const YouTubeMonetizationCalculator: React.FC<YouTubeMonetizationCalculat
     }));
   };
 
-  // Plan Breakdown Calculator based on selected platform, delivery speed (Idea #4) and catalog prices
+  const getPkgQty = (id: string) => packageQuantities[id] || 1;
+  const setPkgQty = (id: string, next: number) =>
+    setPackageQuantities((prev) => ({ ...prev, [id]: Math.max(1, next) }));
+
+  const isPkgSelected = (id: string) => !deselectedPackages[id];
+  const togglePkgSelected = (id: string) =>
+    setDeselectedPackages((prev) => ({ ...prev, [id]: !prev[id] }));
+
+  // Plan Breakdown Calculator based on selected platform, delivery speed (Base B: 48-72h vs 7d+), and Admin USD prices (Base A)
   const planDiagnostic = useMemo(() => {
     const packages: DiagnosticPackageItem[] = [];
     const metricsSummary: Array<{ label: string; current: number; missing: number; target: number; unit: string }> = [];
-    const isExpress = deliverySpeed === 'express';
+    const speedTimeLabel =
+      deliverySpeed === 'express' ? '48 a 72 horas (Modo Express)' : '7 días en adelante (Progresivo)';
 
     if (selectedPlatform === 'youtube') {
       const currentHours = metricValues['youtube-hours'] ?? 1200;
@@ -380,53 +385,57 @@ export const YouTubeMonetizationCalculator: React.FC<YouTubeMonetizationCalculat
 
       if (missingHours > 0) {
         if (missingHours > 2800) {
+          const price = getDiagnosticPrice('diag-yt-4000h', 130);
           packages.push({
             id: 'diag-yt-4000h',
             name: 'Servicio Oficial de 4,000 Horas YouTube',
-            price: 130,
-            originalPrice: 160,
+            price,
+            originalPrice: Math.round(price * 1.25),
             detail: `${missingHours.toLocaleString()}h de reproducción de alta retención (Paquete Completo)`,
             category: 'Horas',
-            deliveryTime: isExpress ? '48 - 72 hrs' : '5 - 7 días (Drip-Feed)',
+            deliveryTime: speedTimeLabel,
             guarantee: 'Garantía 30 días Antidrop',
             network: 'youtube',
             metric: `${missingHours.toLocaleString()} Horas`,
           });
         } else if (missingHours > 1600) {
+          const price = getDiagnosticPrice('diag-yt-2500h', 85);
           packages.push({
             id: 'diag-yt-2500h',
             name: 'Paquete de 2,500 Horas de Reproducción',
-            price: 85,
-            originalPrice: 105,
+            price,
+            originalPrice: Math.round(price * 1.25),
             detail: `Cubre tus ${missingHours.toLocaleString()}h faltantes con retención gradual`,
             category: 'Horas',
-            deliveryTime: isExpress ? '36 - 48 hrs' : '4 - 5 días (Drip-Feed)',
+            deliveryTime: speedTimeLabel,
             guarantee: 'Garantía 30 días Antidrop',
             network: 'youtube',
             metric: '2,500 Horas',
           });
         } else if (missingHours > 600) {
+          const price = getDiagnosticPrice('diag-yt-1500h', 55);
           packages.push({
             id: 'diag-yt-1500h',
             name: 'Paquete de 1,500 Horas de Reproducción',
-            price: 55,
-            originalPrice: 70,
+            price,
+            originalPrice: Math.round(price * 1.25),
             detail: `Impulso para completar tus ${missingHours.toLocaleString()}h faltantes`,
             category: 'Horas',
-            deliveryTime: isExpress ? '24 - 36 hrs' : '3 - 4 días (Drip-Feed)',
+            deliveryTime: speedTimeLabel,
             guarantee: 'Garantía 30 días Antidrop',
             network: 'youtube',
             metric: '1,500 Horas',
           });
         } else {
+          const price = getDiagnosticPrice('diag-yt-sprint', 30);
           packages.push({
             id: 'diag-yt-sprint',
             name: 'Paquete Sprint de Horas Restantes',
-            price: 30,
-            originalPrice: 40,
+            price,
+            originalPrice: Math.round(price * 1.3),
             detail: `Remate final de ${missingHours.toLocaleString()}h para enviar tu solicitud`,
             category: 'Horas',
-            deliveryTime: isExpress ? '12 - 24 hrs' : '2 - 3 días (Drip-Feed)',
+            deliveryTime: speedTimeLabel,
             guarantee: 'Garantía 30 días Antidrop',
             network: 'youtube',
             metric: `${missingHours.toLocaleString()} Horas`,
@@ -435,14 +444,15 @@ export const YouTubeMonetizationCalculator: React.FC<YouTubeMonetizationCalculat
       }
 
       if (missingSubs > 0) {
+        const price = getDiagnosticPrice('diag-yt-1ksubs', 60);
         packages.push({
           id: 'diag-yt-1ksubs',
           name: '1K Suscriptores Reales para YouTube',
-          price: 60,
-          originalPrice: 75,
+          price,
+          originalPrice: Math.round(price * 1.25),
           detail: `Cumple los 1,000 subs requeridos (Te faltan ${missingSubs.toLocaleString()})`,
           category: 'Suscriptores',
-          deliveryTime: isExpress ? '24 - 48 hrs' : '3 - 5 días (Drip-Feed)',
+          deliveryTime: speedTimeLabel,
           guarantee: 'Garantía 30 días Antidrop',
           network: 'youtube',
           metric: '1K Suscriptores',
@@ -450,21 +460,21 @@ export const YouTubeMonetizationCalculator: React.FC<YouTubeMonetizationCalculat
       }
 
       if (includeInteractionBoost) {
+        const price = getDiagnosticPrice('diag-yt-boost', 15);
         packages.push({
           id: 'diag-yt-boost',
           name: 'Impulso YouTube Básico (Oferta Especial)',
-          price: 15,
-          originalPrice: 20,
+          price,
+          originalPrice: Math.round(price * 1.3),
           detail: '358 Likes garantizados + 1,000 Vistas en video para activar el algoritmo',
           category: 'Interacción',
-          deliveryTime: isExpress ? '12 - 24 hrs' : '1 - 2 días',
+          deliveryTime: speedTimeLabel,
           guarantee: 'Garantía 30 días Antidrop',
           network: 'youtube',
           metric: '358 Likes + 1K Vistas',
         });
       }
-    } 
-    else if (selectedPlatform === 'tiktok') {
+    } else if (selectedPlatform === 'tiktok') {
       const currentFollowers = metricValues['tiktok-followers'] ?? 2500;
       const currentViews = metricValues['tiktok-views'] ?? 22000;
       const missingFollowers = Math.max(0, 10000 - currentFollowers);
@@ -475,15 +485,16 @@ export const YouTubeMonetizationCalculator: React.FC<YouTubeMonetizationCalculat
 
       if (missingFollowers > 0) {
         const unitsOf1K = Math.min(10, Math.ceil(missingFollowers / 1000));
-        const price = unitsOf1K * 15;
+        const unitPrice = getDiagnosticPrice('diag-tt-followers-unit', 15);
+        const price = unitsOf1K * unitPrice;
         packages.push({
           id: `diag-tt-followers-${unitsOf1K}k`,
           name: `Paquete de ${unitsOf1K * 1000} Seguidores Reales TikTok`,
           price,
           originalPrice: Math.round(price * 1.25),
-          detail: `Alcanza los 10,000 seguidores para el Fondo de Creadores y LIVE (${unitsOf1K}k a $15 c/u)`,
+          detail: `Alcanza los 10,000 seguidores para el Fondo de Creadores y LIVE (${unitsOf1K}k a $${unitPrice} c/u)`,
           category: 'Seguidores',
-          deliveryTime: isExpress ? '24 - 48 hrs' : '3 - 5 días (Drip-Feed)',
+          deliveryTime: speedTimeLabel,
           guarantee: 'Garantía 30 días Antidrop',
           network: 'tiktok',
           metric: `${unitsOf1K}K Seguidores`,
@@ -492,7 +503,8 @@ export const YouTubeMonetizationCalculator: React.FC<YouTubeMonetizationCalculat
 
       if (missingViews > 0) {
         const promoUnits = Math.min(10, Math.ceil(missingViews / 10000));
-        const price = promoUnits * 10;
+        const unitPrice = getDiagnosticPrice('diag-tt-views-unit', 10);
+        const price = promoUnits * unitPrice;
         packages.push({
           id: `diag-tt-views-${promoUnits * 3}k`,
           name: `Impulso de Reproducciones Virales TikTok (${promoUnits * 3}K Vistas)`,
@@ -500,7 +512,7 @@ export const YouTubeMonetizationCalculator: React.FC<YouTubeMonetizationCalculat
           originalPrice: Math.round(price * 1.3),
           detail: `Súper Promo de vistas para activar el algoritmo Para Ti y alcanzar los 100K`,
           category: 'Vistas',
-          deliveryTime: isExpress ? '12 - 24 hrs' : '2 - 4 días',
+          deliveryTime: speedTimeLabel,
           guarantee: 'Garantía 30 días Antidrop',
           network: 'tiktok',
           metric: `${promoUnits * 3}K Vistas`,
@@ -508,21 +520,21 @@ export const YouTubeMonetizationCalculator: React.FC<YouTubeMonetizationCalculat
       }
 
       if (includeInteractionBoost) {
+        const price = getDiagnosticPrice('diag-tt-likes-1k', 10);
         packages.push({
           id: 'diag-tt-likes-1k',
           name: '1K Likes en Videos TikTok',
-          price: 10,
-          originalPrice: 15,
+          price,
+          originalPrice: Math.round(price * 1.3),
           detail: '1,000 Me Gustas para disparar el ratio de interacción y retención',
           category: 'Likes',
-          deliveryTime: isExpress ? '12 - 24 hrs' : '1 - 2 días',
+          deliveryTime: speedTimeLabel,
           guarantee: 'Garantía 30 días Antidrop',
           network: 'tiktok',
           metric: '1K Likes',
         });
       }
-    }
-    else if (selectedPlatform === 'instagram') {
+    } else if (selectedPlatform === 'instagram') {
       const currentFollowers = metricValues['instagram-followers'] ?? 3000;
       const currentViews = metricValues['instagram-reelsViews'] ?? 1200;
       const missingFollowers = Math.max(0, 10000 - currentFollowers);
@@ -533,15 +545,16 @@ export const YouTubeMonetizationCalculator: React.FC<YouTubeMonetizationCalculat
 
       if (missingFollowers > 0) {
         const unitsOf1K = Math.min(10, Math.ceil(missingFollowers / 1000));
-        const price = unitsOf1K * 15;
+        const unitPrice = getDiagnosticPrice('diag-ig-followers-unit', 15);
+        const price = unitsOf1K * unitPrice;
         packages.push({
           id: `diag-ig-followers-${unitsOf1K}k`,
           name: `Mega Crecimiento: ${unitsOf1K * 1000} Seguidores Instagram`,
           price,
           originalPrice: Math.round(price * 1.25),
-          detail: `Prepara tu cuenta para monetizar y colaboraciones (${unitsOf1K}k a $15 c/u)`,
+          detail: `Prepara tu cuenta para monetizar y colaboraciones (${unitsOf1K}k a $${unitPrice} c/u)`,
           category: 'Seguidores',
-          deliveryTime: isExpress ? '24 - 48 hrs' : '3 - 5 días (Drip-Feed)',
+          deliveryTime: speedTimeLabel,
           guarantee: 'Garantía 30 días Antidrop',
           network: 'instagram',
           metric: `${unitsOf1K}K Seguidores`,
@@ -550,15 +563,16 @@ export const YouTubeMonetizationCalculator: React.FC<YouTubeMonetizationCalculat
 
       if (missingViews > 0) {
         const unitsOfViews = Math.min(5, Math.ceil(missingViews / 1000));
-        const price = unitsOfViews * 10;
+        const unitPrice = getDiagnosticPrice('diag-ig-reels-unit', 10);
+        const price = unitsOfViews * unitPrice;
         packages.push({
           id: `diag-ig-reels-${unitsOfViews}k`,
           name: `Interacción y Vistas en Reels (${unitsOfViews * 1000} Vistas)`,
           price,
           originalPrice: Math.round(price * 1.3),
-          detail: `Posiciona tus reels en la pestaña Explorar ($10 por cada 1,000)`,
+          detail: `Posiciona tus reels en la pestaña Explorar ($${unitPrice} por cada 1,000)`,
           category: 'Reels',
-          deliveryTime: isExpress ? '12 - 24 hrs' : '2 - 3 días',
+          deliveryTime: speedTimeLabel,
           guarantee: 'Garantía 30 días Antidrop',
           network: 'instagram',
           metric: `${unitsOfViews}K Vistas`,
@@ -566,21 +580,21 @@ export const YouTubeMonetizationCalculator: React.FC<YouTubeMonetizationCalculat
       }
 
       if (includeInteractionBoost) {
+        const price = getDiagnosticPrice('diag-ig-likes-1k', 10);
         packages.push({
           id: 'diag-ig-likes-1k',
           name: '1K Likes en Posts y Reels',
-          price: 10,
-          originalPrice: 15,
+          price,
+          originalPrice: Math.round(price * 1.3),
           detail: '1,000 corazones para validar engagement y presencia estética',
           category: 'Likes',
-          deliveryTime: isExpress ? '12 - 24 hrs' : '1 - 2 días',
+          deliveryTime: speedTimeLabel,
           guarantee: 'Garantía 30 días Antidrop',
           network: 'instagram',
           metric: '1K Likes',
         });
       }
-    }
-    else if (selectedPlatform === 'facebook') {
+    } else if (selectedPlatform === 'facebook') {
       const currentFollowers = metricValues['facebook-followers'] ?? 1500;
       const currentMinutes = metricValues['facebook-videoMinutes'] ?? 18000;
       const missingFollowers = Math.max(0, 5000 - currentFollowers);
@@ -591,15 +605,16 @@ export const YouTubeMonetizationCalculator: React.FC<YouTubeMonetizationCalculat
 
       if (missingFollowers > 0) {
         const unitsOf1K = Math.min(5, Math.ceil(missingFollowers / 1000));
-        const price = unitsOf1K * 15;
+        const unitPrice = getDiagnosticPrice('diag-fb-followers-unit', 15);
+        const price = unitsOf1K * unitPrice;
         packages.push({
           id: `diag-fb-followers-${unitsOf1K}k`,
           name: `Seguidores de Página / Perfil (${unitsOf1K * 1000} Seg.)`,
           price,
           originalPrice: Math.round(price * 1.25),
-          detail: `Alcanza la meta de 5,000 seguidores para monetizar In-Stream (${unitsOf1K}k a $15 c/u)`,
+          detail: `Alcanza la meta de 5,000 seguidores para monetizar In-Stream (${unitsOf1K}k a $${unitPrice} c/u)`,
           category: 'Seguidores',
-          deliveryTime: isExpress ? '24 - 48 hrs' : '3 - 5 días (Drip-Feed)',
+          deliveryTime: speedTimeLabel,
           guarantee: 'Garantía 30 días Antidrop',
           network: 'facebook',
           metric: `${unitsOf1K}K Seguidores`,
@@ -608,7 +623,8 @@ export const YouTubeMonetizationCalculator: React.FC<YouTubeMonetizationCalculat
 
       if (missingMinutes > 0) {
         const unitsOfViews = Math.min(5, Math.ceil(missingMinutes / 12000));
-        const price = unitsOfViews * 10;
+        const unitPrice = getDiagnosticPrice('diag-fb-views-unit', 10);
+        const price = unitsOfViews * unitPrice;
         packages.push({
           id: `diag-fb-views-${unitsOfViews}k`,
           name: `Reproducciones de Video y Reels (${unitsOfViews * 1000} Vistas)`,
@@ -616,7 +632,7 @@ export const YouTubeMonetizationCalculator: React.FC<YouTubeMonetizationCalculat
           originalPrice: Math.round(price * 1.3),
           detail: `Tiempo de visualización de alta retención para cumplir los 60,000 minutos`,
           category: 'Vistas',
-          deliveryTime: isExpress ? '24 - 48 hrs' : '3 - 5 días',
+          deliveryTime: speedTimeLabel,
           guarantee: 'Garantía 30 días Antidrop',
           network: 'facebook',
           metric: `${unitsOfViews}K Vistas`,
@@ -624,21 +640,21 @@ export const YouTubeMonetizationCalculator: React.FC<YouTubeMonetizationCalculat
       }
 
       if (includeInteractionBoost) {
+        const price = getDiagnosticPrice('diag-fb-emojis-1k', 15);
         packages.push({
           id: 'diag-fb-emojis-1k',
           name: '1K Emojis / Reacciones Personalizadas',
-          price: 15,
-          originalPrice: 20,
+          price,
+          originalPrice: Math.round(price * 1.3),
           detail: '1,000 reacciones (Me encanta / Me importa) para interacción orgánica',
           category: 'Reacciones',
-          deliveryTime: isExpress ? '12 - 24 hrs' : '1 - 2 días',
+          deliveryTime: speedTimeLabel,
           guarantee: 'Garantía 30 días Antidrop',
           network: 'facebook',
           metric: '1K Emojis',
         });
       }
-    }
-    else if (selectedPlatform === 'kick') {
+    } else if (selectedPlatform === 'kick') {
       const currentFollowers = metricValues['kick-followers'] ?? 35;
       const streamHours = metricValues['kick-streamHours'] ?? 2;
       const missingFollowers = Math.max(0, 100 - currentFollowers);
@@ -647,22 +663,23 @@ export const YouTubeMonetizationCalculator: React.FC<YouTubeMonetizationCalculat
       metricsSummary.push({ label: 'Horas de directo', current: streamHours, missing: 0, target: 5, unit: 'horas' });
 
       if (missingFollowers > 0) {
+        const price = getDiagnosticPrice('diag-kick-100subs', 5);
         packages.push({
           id: 'diag-kick-100subs',
           name: 'Kick 100 Seguidores (Meta Afiliado)',
-          price: 5,
-          originalPrice: 8,
+          price,
+          originalPrice: price + 3,
           detail: 'Desbloquea el requisito de seguidores del Programa de Afiliados de Kick',
           category: 'Seguidores',
-          deliveryTime: isExpress ? '12 - 24 hrs' : '2 - 3 días',
+          deliveryTime: speedTimeLabel,
           guarantee: 'Garantía 30 días Antidrop',
           network: 'kick',
           metric: '100 Seguidores',
         });
       }
 
-      const viewerPrices: Record<number, number> = { 1: 5, 2: 7, 3: 9, 4: 11, 5: 13 };
-      const hoursPrice = viewerPrices[streamHours] || 7;
+      const matchingCatalogViewer = services.find((s) => s.id === `kick-v-${streamHours}h`);
+      const hoursPrice = matchingCatalogViewer ? matchingCatalogViewer.price : 5 + (streamHours - 1) * 2;
       packages.push({
         id: `diag-kick-viewers-${streamHours}h`,
         name: `Kick Viewers x ${streamHours} Horas (100 Viewers)`,
@@ -670,28 +687,28 @@ export const YouTubeMonetizationCalculator: React.FC<YouTubeMonetizationCalculat
         originalPrice: hoursPrice + 4,
         detail: `Audiencia simultánea continua para posicionar tu directo en la portada de Kick`,
         category: 'Viewers',
-        deliveryTime: isExpress ? 'En vivo inmediato' : 'Agendado con tu directo',
+        deliveryTime: speedTimeLabel,
         guarantee: 'Garantía 30 días Antidrop',
         network: 'kick',
         metric: `100 Viewers x ${streamHours}H`,
       });
 
       if (includeInteractionBoost) {
+        const price = getDiagnosticPrice('diag-kick-300subs', 7);
         packages.push({
           id: 'diag-kick-300subs',
           name: 'Kick 300 Seguidores Extra (Impulso Canal)',
-          price: 7,
-          originalPrice: 10,
+          price,
+          originalPrice: price + 3,
           detail: 'Comunidad sólida para optar a verificación y contratos en Kick',
           category: 'Seguidores',
-          deliveryTime: isExpress ? '24 - 48 hrs' : '2 - 4 días',
+          deliveryTime: speedTimeLabel,
           guarantee: 'Garantía 30 días Antidrop',
           network: 'kick',
           metric: '300 Seguidores',
         });
       }
-    }
-    else if (selectedPlatform === 'spotify') {
+    } else if (selectedPlatform === 'spotify') {
       const currentListeners = metricValues['spotify-listeners'] ?? 1200;
       const currentStreams = metricValues['spotify-streams'] ?? 1500;
       const missingListeners = Math.max(0, 5000 - currentListeners);
@@ -702,15 +719,16 @@ export const YouTubeMonetizationCalculator: React.FC<YouTubeMonetizationCalculat
 
       if (missingListeners > 0) {
         const units = Math.min(5, Math.ceil(missingListeners / 1000));
-        const price = units * 15;
+        const unitPrice = getDiagnosticPrice('diag-spot-listeners-unit', 15);
+        const price = units * unitPrice;
         packages.push({
           id: `diag-spot-listeners-${units}k`,
           name: `Oyentes Mensuales (${units * 1000} Oyentes)`,
           price,
           originalPrice: Math.round(price * 1.25),
-          detail: `Métrica clave visible en tu perfil para cobrar regalías ($15 por cada 1,000)`,
+          detail: `Métrica clave visible en tu perfil para cobrar regalías ($${unitPrice} por cada 1,000)`,
           category: 'Oyentes',
-          deliveryTime: isExpress ? '24 - 48 hrs' : '3 - 5 días (Drip-Feed)',
+          deliveryTime: speedTimeLabel,
           guarantee: 'Garantía 30 días Antidrop',
           network: 'spotify',
           metric: `${units}K Oyentes`,
@@ -719,15 +737,16 @@ export const YouTubeMonetizationCalculator: React.FC<YouTubeMonetizationCalculat
 
       if (missingStreams > 0) {
         const units = Math.min(5, Math.ceil(missingStreams / 1000));
-        const price = units * 15;
+        const unitPrice = getDiagnosticPrice('diag-spot-streams-unit', 15);
+        const price = units * unitPrice;
         packages.push({
           id: `diag-spot-streams-${units}k`,
           name: `Reproducciones dirigidas - America Latina S4 (${units * 1000} Streams)`,
           price,
           originalPrice: Math.round(price * 1.25),
-          detail: `Streams geolocalizados para posicionar en charts regionales ($15 por cada 1,000)`,
+          detail: `Streams geolocalizados para posicionar en charts regionales ($${unitPrice} por cada 1,000)`,
           category: 'Streams',
-          deliveryTime: isExpress ? '24 - 48 hrs' : '3 - 6 días (Drip-Feed)',
+          deliveryTime: speedTimeLabel,
           guarantee: 'Garantía 30 días Antidrop',
           network: 'spotify',
           metric: `${units}K Streams`,
@@ -735,14 +754,15 @@ export const YouTubeMonetizationCalculator: React.FC<YouTubeMonetizationCalculat
       }
 
       if (includeInteractionBoost) {
+        const price = getDiagnosticPrice('diag-spot-saves-1k', 15);
         packages.push({
           id: 'diag-spot-saves-1k',
           name: '1,000 Guardar (Saves) en Biblioteca',
-          price: 15,
-          originalPrice: 20,
+          price,
+          originalPrice: Math.round(price * 1.3),
           detail: 'La métrica clave que activa el algoritmo Discover Weekly y Release Radar',
           category: 'Saves',
-          deliveryTime: isExpress ? '12 - 24 hrs' : '2 - 3 días',
+          deliveryTime: speedTimeLabel,
           guarantee: 'Garantía 30 días Antidrop',
           network: 'spotify',
           metric: '1K Saves',
@@ -750,57 +770,164 @@ export const YouTubeMonetizationCalculator: React.FC<YouTubeMonetizationCalculat
       }
     }
 
-    const total = packages.reduce((acc, p) => acc + p.price, 0);
+    const selectedPackages = packages.filter((p) => !deselectedPackages[p.id]);
+    const total = selectedPackages.reduce(
+      (acc, p) => acc + p.price * (packageQuantities[p.id] || 1),
+      0
+    );
 
     return {
       packages,
+      selectedPackages,
       total,
       metricsSummary,
     };
-  }, [selectedPlatform, metricValues, includeInteractionBoost, deliverySpeed]);
+  }, [
+    selectedPlatform,
+    metricValues,
+    includeInteractionBoost,
+    deliverySpeed,
+    getDiagnosticPrice,
+    services,
+    deselectedPackages,
+    packageQuantities,
+  ]);
 
   const handleAddToCartPackage = (pkg: DiagnosticPackageItem) => {
+    const qty = getPkgQty(pkg.id);
     if (onAddToCart) {
-      onAddToCart({
-        id: pkg.id,
-        network: pkg.network,
-        name: pkg.name,
-        metric: pkg.metric,
-        price: pkg.price,
-        unit: pkg.detail,
-        description: `${pkg.detail} | ⏱️ ${pkg.deliveryTime} | 🛡️ ${pkg.guarantee}`,
-        deliveryTime: pkg.deliveryTime,
-        guarantee: pkg.guarantee,
-        image: 'https://images.unsplash.com/photo-1611162617474-5b21e879e113?auto=format&fit=crop&w=800&q=80',
-      });
+      onAddToCart(
+        {
+          id: pkg.id,
+          network: pkg.network,
+          name: pkg.name,
+          metric: pkg.metric,
+          price: pkg.price,
+          unit: pkg.detail,
+          description: `${pkg.detail} | ⏱️ ${pkg.deliveryTime} | 🛡️ ${pkg.guarantee}`,
+          deliveryTime: pkg.deliveryTime,
+          guarantee: pkg.guarantee,
+          image: 'https://images.unsplash.com/photo-1611162617474-5b21e879e113?auto=format&fit=crop&w=800&q=80',
+        },
+        qty
+      );
       setAddedPackageId(pkg.id);
       setTimeout(() => setAddedPackageId(null), 1500);
     }
   };
 
-  const getSinglePackageWaUrl = (pkg: DiagnosticPackageItem) => {
-    const text = `🔥 ¡Hola! Vengo del Centro de Diagnóstico de ${activePlatform.name} y me interesa adquirir este paquete:\n\n📌 *Paquete:* ${pkg.name} ($${pkg.price} USD)\n📝 *Detalle:* ${pkg.detail}\n⏱️ *Tiempo de Entrega:* ${pkg.deliveryTime}\n🛡️ *Garantía:* ${pkg.guarantee}\n🚀 *Ritmo Solicitado:* ${deliverySpeed === 'express' ? 'Express (24-48h)' : 'Progresivo / Drip-feed (3-7 días)'}\n🔗 *Mi enlace:* ${currentUrl.trim() || 'Te lo facilito por aquí en el chat'}\n\n¿Me confirmas disponibilidad y tasa para coordinar por Binance (ID: ${BINANCE_PAY_ID}) o Pago Móvil? ¡Gracias!`;
-    return buildWhatsAppLink(text);
+  // Base C: Add all selected packages at once to the Multi-Order Cart
+  const handleAddAllSelectedToCart = () => {
+    if (!onAddToCart) return;
+    const pkgsToAdd =
+      planDiagnostic.selectedPackages.length > 0
+        ? planDiagnostic.selectedPackages
+        : planDiagnostic.packages;
+
+    pkgsToAdd.forEach((pkg) => {
+      const qty = getPkgQty(pkg.id);
+      onAddToCart(
+        {
+          id: pkg.id,
+          network: pkg.network,
+          name: pkg.name,
+          metric: pkg.metric,
+          price: pkg.price,
+          unit: pkg.detail,
+          description: `${pkg.detail} | ⏱️ ${pkg.deliveryTime} | 🛡️ ${pkg.guarantee}`,
+          deliveryTime: pkg.deliveryTime,
+          guarantee: pkg.guarantee,
+          image: 'https://images.unsplash.com/photo-1611162617474-5b21e879e113?auto=format&fit=crop&w=800&q=80',
+        },
+        qty
+      );
+    });
+
+    setAddedAllBanner(true);
+    setTimeout(() => setAddedAllBanner(false), 2200);
+  };
+
+  const handleSinglePackageWhatsApp = (pkg: DiagnosticPackageItem) => {
+    const qty = getPkgQty(pkg.id);
+    const subtotal = pkg.price * qty;
+    const speedLabel =
+      deliverySpeed === 'express'
+        ? 'Modo Express (48 a 72 horas)'
+        : 'Modo Progresivo (7 días en adelante)';
+
+    const text = `🔥 ¡Hola! Vengo del Centro de Diagnóstico de ${activePlatform.name} y me interesa adquirir este paquete:\n\n📌 *Paquete:* ${pkg.name}${qty > 1 ? ` (x${qty})` : ''} ➜ *$${subtotal} USD*\n📝 *Detalle:* ${pkg.detail}\n⏱️ *Tiempo de Entrega:* ${pkg.deliveryTime}\n🛡️ *Garantía:* ${pkg.guarantee}\n🚀 *Ritmo Solicitado:* ${speedLabel}\n🔗 *Mi enlace:* ${currentUrl.trim() || 'Te lo facilito por aquí en el chat'}\n\n¿Me confirmas disponibilidad y tasa para coordinar por Binance (ID: ${paymentConfig.binancePayId}) o Pago Móvil (${paymentConfig.pagoMovil.bankCode})? ¡Gracias!`;
+
+    recordOrder({
+      source: 'plan_monetizacion',
+      clientLink: currentUrl.trim() || 'Por confirmar en WhatsApp',
+      deliverySpeed,
+      deliverySpeedLabel: speedLabel,
+      paymentMethod: `Pago Móvil (${paymentConfig.pagoMovil.bankCode}) / Binance (${paymentConfig.binancePayId})`,
+      items: [
+        {
+          name: pkg.name,
+          metric: pkg.metric,
+          network: pkg.network,
+          unitPrice: pkg.price,
+          quantity: qty,
+        },
+      ],
+      totalUSD: subtotal,
+    });
+
+    const link = buildWhatsAppLink(text, paymentConfig.whatsappPhone);
+    window.open(link, '_blank');
   };
 
   const handleSendToWhatsApp = () => {
+    const pkgsToUse =
+      planDiagnostic.selectedPackages.length > 0
+        ? planDiagnostic.selectedPackages
+        : planDiagnostic.packages;
+
+    const totalEstimate = pkgsToUse.reduce(
+      (sum, p) => sum + p.price * getPkgQty(p.id),
+      0
+    );
+
     const message = buildUniversalMonetizationPlanWhatsAppMessage({
       platformName: activePlatform.name,
       platformIcon: activePlatform.icon,
       accountUrl: currentUrl || 'Te lo paso por aquí en el chat',
       metrics: planDiagnostic.metricsSummary,
-      recommendedPackages: planDiagnostic.packages.map((p) => ({
+      recommendedPackages: pkgsToUse.map((p) => ({
         name: p.name,
         price: p.price,
         detail: p.detail,
         deliveryTime: p.deliveryTime,
         guarantee: p.guarantee,
+        quantity: getPkgQty(p.id),
       })),
       deliverySpeed,
-      totalEstimate: planDiagnostic.total,
+      totalEstimate,
+      paymentConfig,
     });
 
-    const link = buildWhatsAppLink(message);
+    recordOrder({
+      source: 'plan_monetizacion',
+      clientLink: currentUrl.trim() || 'Por confirmar en WhatsApp',
+      deliverySpeed,
+      deliverySpeedLabel:
+        deliverySpeed === 'progressive'
+          ? 'Modo Progresivo (7 días en adelante)'
+          : 'Modo Express (48 a 72 horas)',
+      paymentMethod: `Pago Móvil (${paymentConfig.pagoMovil.bankCode}) / Binance (${paymentConfig.binancePayId})`,
+      items: pkgsToUse.map((p) => ({
+        name: p.name,
+        metric: p.metric,
+        network: p.network,
+        unitPrice: p.price,
+        quantity: getPkgQty(p.id),
+      })),
+      totalUSD: totalEstimate,
+    });
+
+    const link = buildWhatsAppLink(message, paymentConfig.whatsappPhone);
     window.open(link, '_blank');
   };
 
@@ -821,7 +948,7 @@ export const YouTubeMonetizationCalculator: React.FC<YouTubeMonetizationCalculat
             ¿Qué paquetes necesitas para monetizar tu cuenta?
           </h2>
           <p className="text-xs sm:text-sm text-zinc-300 mt-1 max-w-2xl">
-            Elige tu plataforma, coloca tu enlace, descubre qué te falta para monetizar o alcanzar tus metas, y ponte de acuerdo por WhatsApp con los paquetes del catálogo.
+            Elige tu plataforma, selecciona varios paquetes o ajusta cantidades, elige entre <strong>Modo Express (48 a 72 horas)</strong> o <strong>Modo Progresivo (7 días en adelante)</strong> y añádelos a tu pedido o envíalos por WhatsApp.
           </p>
         </div>
 
@@ -896,9 +1023,9 @@ export const YouTubeMonetizationCalculator: React.FC<YouTubeMonetizationCalculat
               <span className="w-5 h-5 rounded-full bg-amber-600/30 text-amber-400 font-bold inline-flex items-center justify-center text-[10px] mb-1.5">
                 3
               </span>
-              <div className="font-bold text-white text-[11px]">3. Diagnóstico y Paquetes</div>
+              <div className="font-bold text-white text-[11px]">3. Añade Varios Paquetes</div>
               <p className="text-[11px] text-zinc-400 mt-0.5">
-                Calcula qué te falta y asigna los paquetes exactos del catálogo sumando el total.
+                Selecciona uno, varios o todos los paquetes con cantidades y ritmo Express (48-72h) o Progresivo (7d+).
               </p>
             </div>
 
@@ -915,7 +1042,7 @@ export const YouTubeMonetizationCalculator: React.FC<YouTubeMonetizationCalculat
         </div>
       )}
 
-      {/* PLATFORMS SELECTOR TABS (YouTube, TikTok, Instagram, Facebook, Kick, Spotify) */}
+      {/* PLATFORMS SELECTOR TABS */}
       <div className="mb-8 relative z-10">
         <span className="text-xs font-bold text-zinc-400 uppercase tracking-wider block mb-3">
           Selecciona la plataforma a diagnosticar:
@@ -946,10 +1073,8 @@ export const YouTubeMonetizationCalculator: React.FC<YouTubeMonetizationCalculat
 
       {/* MAIN DIAGNOSTIC WORKBENCH */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start relative z-10">
-        
         {/* Left Column: Platform Inputs & Sliders */}
         <div className="lg:col-span-7 space-y-6">
-          
           {/* Active Platform Header Banner */}
           <div className="bg-zinc-900/90 border border-zinc-800 rounded-2xl p-4 sm:p-5 flex items-start justify-between gap-4">
             <div>
@@ -959,11 +1084,11 @@ export const YouTubeMonetizationCalculator: React.FC<YouTubeMonetizationCalculat
                   {activePlatform.title}
                 </h3>
               </div>
-              <p className="text-xs text-zinc-300 mt-1">
-                {activePlatform.subtitle}
-              </p>
+              <p className="text-xs text-zinc-300 mt-1">{activePlatform.subtitle}</p>
             </div>
-            <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wider shrink-0 ${activePlatform.badgeBg} ${activePlatform.badgeBorder} ${activePlatform.badgeText} border`}>
+            <span
+              className={`text-[10px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wider shrink-0 ${activePlatform.badgeBg} ${activePlatform.badgeBorder} ${activePlatform.badgeText} border`}
+            >
               Meta Oficial
             </span>
           </div>
@@ -972,7 +1097,9 @@ export const YouTubeMonetizationCalculator: React.FC<YouTubeMonetizationCalculat
           <div className="bg-zinc-900/70 border border-zinc-800 rounded-2xl p-4 sm:p-5">
             <label className="block text-xs sm:text-sm font-bold text-white mb-1.5 flex items-center justify-between">
               <span>{activePlatform.inputLabel}:</span>
-              <span className="text-[11px] text-purple-400 font-semibold">Para vincular tu cotización</span>
+              <span className="text-[11px] text-purple-400 font-semibold">
+                Para vincular tu cotización
+              </span>
             </label>
             <div className="flex gap-2">
               <input
@@ -995,11 +1122,13 @@ export const YouTubeMonetizationCalculator: React.FC<YouTubeMonetizationCalculat
           {activePlatform.thresholds.map((metric) => {
             const key = `${activePlatform.id}-${metric.id}`;
             const currentValue = metricValues[key] ?? metric.defaultVal;
-            const missing = Math.max(0, metric.target - currentValue);
             const percentage = Math.min(100, Math.round((currentValue / metric.target) * 100));
 
             return (
-              <div key={metric.id} className="bg-zinc-900/70 border border-zinc-800 rounded-2xl p-4 sm:p-5 space-y-3">
+              <div
+                key={metric.id}
+                className="bg-zinc-900/70 border border-zinc-800 rounded-2xl p-4 sm:p-5 space-y-3"
+              >
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
                   <label className="text-xs sm:text-sm font-bold text-white flex items-center gap-2">
                     <Clock className="w-4 h-4 text-purple-400" />
@@ -1009,7 +1138,9 @@ export const YouTubeMonetizationCalculator: React.FC<YouTubeMonetizationCalculat
                     <span className="text-base font-black text-purple-400 bg-purple-950/60 border border-purple-900 px-2.5 py-0.5 rounded-lg">
                       {currentValue.toLocaleString()} {metric.unit}
                     </span>
-                    <span className="text-xs text-zinc-400">/ {metric.target.toLocaleString()} {metric.unit}</span>
+                    <span className="text-xs text-zinc-400">
+                      / {metric.target.toLocaleString()} {metric.unit}
+                    </span>
                   </div>
                 </div>
 
@@ -1026,7 +1157,9 @@ export const YouTubeMonetizationCalculator: React.FC<YouTubeMonetizationCalculat
                 <div className="flex justify-between text-[11px] text-zinc-400">
                   <span>{metric.min.toLocaleString()}</span>
                   <span className="text-emerald-400 font-bold">{percentage}% alcanzado</span>
-                  <span className="text-purple-400 font-bold">Meta: {metric.target.toLocaleString()}</span>
+                  <span className="text-purple-400 font-bold">
+                    Meta: {metric.target.toLocaleString()}
+                  </span>
                 </div>
 
                 {/* Quick Presets */}
@@ -1073,12 +1206,10 @@ export const YouTubeMonetizationCalculator: React.FC<YouTubeMonetizationCalculat
               </label>
             </div>
           </div>
-
         </div>
 
         {/* Right Column: Diagnostic & WhatsApp Agreement Card */}
         <div className="lg:col-span-5 bg-gradient-to-b from-zinc-900 via-zinc-900 to-zinc-950 border border-zinc-800 rounded-3xl p-6 sm:p-7 space-y-6 shadow-2xl">
-          
           {/* Header of Diagnostic Box */}
           <div>
             <div className="flex items-center justify-between text-xs uppercase tracking-wider text-zinc-400 font-bold mb-2">
@@ -1098,7 +1229,10 @@ export const YouTubeMonetizationCalculator: React.FC<YouTubeMonetizationCalculat
                         <span className="text-emerald-400 font-bold">¡Meta Cumplida!</span>
                       ) : (
                         <span className="text-white font-bold">
-                          Te faltan: <strong className="text-rose-400">{m.missing.toLocaleString()} {m.unit}</strong>
+                          Te faltan:{' '}
+                          <strong className="text-rose-400">
+                            {m.missing.toLocaleString()} {m.unit}
+                          </strong>
                         </span>
                       )}
                     </div>
@@ -1109,7 +1243,9 @@ export const YouTubeMonetizationCalculator: React.FC<YouTubeMonetizationCalculat
                       />
                     </div>
                     <div className="flex justify-between text-[10px] text-zinc-400 mt-1">
-                      <span>{m.current.toLocaleString()} / {m.target.toLocaleString()}</span>
+                      <span>
+                        {m.current.toLocaleString()} / {m.target.toLocaleString()}
+                      </span>
                       <span>{perc}%</span>
                     </div>
                   </div>
@@ -1118,15 +1254,15 @@ export const YouTubeMonetizationCalculator: React.FC<YouTubeMonetizationCalculat
             </div>
           </div>
 
-          {/* Idea 4: Selector de Velocidad y Ritmo de Entrega para Todos los Paquetes */}
+          {/* Base B: Selector de Velocidad y Ritmo de Entrega (Express 48 a 72 horas vs Progresivo 7 días en adelante) */}
           <div className="bg-zinc-950/90 border border-zinc-800 rounded-2xl p-3.5 space-y-2.5">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-white flex items-center gap-1.5">
                 <Zap className="w-3.5 h-3.5 text-amber-400" />
-                <span>Ritmo y Velocidad de Entrega (Para todos los paquetes):</span>
+                <span>Ritmo y Velocidad de Entrega:</span>
               </span>
               <span className="text-[10px] bg-purple-500/20 text-purple-300 border border-purple-500/30 px-2 py-0.5 rounded-full font-bold">
-                Idea #4 Activa
+                Elige tu modalidad
               </span>
             </div>
 
@@ -1144,8 +1280,8 @@ export const YouTubeMonetizationCalculator: React.FC<YouTubeMonetizationCalculat
                   <Zap className="w-3 h-3" />
                   <span>Modo Express</span>
                 </div>
-                <div className="text-[10px] text-zinc-300 mt-0.5">24 a 48 hrs (Acelerado)</div>
-                <div className="text-[9px] text-zinc-400 mt-0.5">Para monetizar urgente</div>
+                <div className="text-[11px] font-bold text-white mt-0.5">48 a 72 horas</div>
+                <div className="text-[9px] text-zinc-400 mt-0.5">Entrega acelerada</div>
               </button>
 
               <button
@@ -1161,19 +1297,19 @@ export const YouTubeMonetizationCalculator: React.FC<YouTubeMonetizationCalculat
                   <Clock className="w-3 h-3" />
                   <span>Modo Progresivo</span>
                 </div>
-                <div className="text-[10px] text-zinc-300 mt-0.5">3 a 7 días (Drip-Feed)</div>
-                <div className="text-[9px] text-zinc-400 mt-0.5">Algoritmo 100% natural</div>
+                <div className="text-[11px] font-bold text-white mt-0.5">7 días en adelante</div>
+                <div className="text-[9px] text-zinc-400 mt-0.5">Drip-Feed orgánico</div>
               </button>
             </div>
           </div>
 
-          {/* Recommended Packages from Catalog (Idea 4 Applied to All Packages) */}
+          {/* Recommended Packages from Catalog with Multi-Select & Quantity (Base C) */}
           <div>
             <div className="text-xs font-bold text-white uppercase tracking-wider mb-2.5 flex items-center justify-between">
-              <span>Paquetes para Monetizarlo:</span>
+              <span>Paquetes para Monetizarlo ({planDiagnostic.packages.length}):</span>
               <span className="text-[10px] text-emerald-400 font-bold flex items-center gap-1">
                 <ShieldCheck className="w-3 h-3" />
-                Garantía y Entrega Incluida
+                Selecciona uno o varios
               </span>
             </div>
 
@@ -1181,57 +1317,98 @@ export const YouTubeMonetizationCalculator: React.FC<YouTubeMonetizationCalculat
               {planDiagnostic.packages.length === 0 ? (
                 <div className="p-4 bg-emerald-950/30 border border-emerald-500/30 rounded-2xl text-xs text-emerald-300 flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                  <span>🎉 ¡Tu cuenta ya cumple con las metas requeridas para monetizar o postular al programa de socios!</span>
+                  <span>
+                    🎉 ¡Tu cuenta ya cumple con las metas requeridas para monetizar o postular al programa de socios!
+                  </span>
                 </div>
               ) : (
                 planDiagnostic.packages.map((pkg) => {
-                  const singleWaUrl = getSinglePackageWaUrl(pkg);
                   const isJustAdded = addedPackageId === pkg.id;
+                  const qty = getPkgQty(pkg.id);
+                  const selected = isPkgSelected(pkg.id);
+                  const subtotal = pkg.price * qty;
 
                   return (
                     <div
                       key={pkg.id}
-                      className="bg-zinc-950 border border-zinc-800 rounded-2xl p-4 flex flex-col gap-3 transition-all hover:border-zinc-700 hover:shadow-lg shadow-black/40"
+                      className={`bg-zinc-950 border rounded-2xl p-4 flex flex-col gap-3 transition-all shadow-black/40 ${
+                        selected
+                          ? 'border-zinc-700 hover:border-purple-500/50'
+                          : 'border-zinc-800/50 opacity-60'
+                      }`}
                     >
                       {/* Package Header & Pricing */}
                       <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <div className="font-bold text-white text-xs sm:text-sm flex items-center gap-1.5 flex-wrap">
-                            <span className="w-2 h-2 rounded-full bg-purple-500" />
-                            <span>{pkg.name}</span>
-                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-zinc-800 text-purple-300 font-semibold border border-zinc-700">
-                              {pkg.category}
-                            </span>
+                        <div className="flex items-start gap-2.5">
+                          <input
+                            type="checkbox"
+                            checked={selected}
+                            onChange={() => togglePkgSelected(pkg.id)}
+                            className="mt-1 w-4 h-4 rounded accent-purple-600 cursor-pointer shrink-0"
+                            title="Incluir este paquete en el pedido múltiple"
+                          />
+                          <div>
+                            <div className="font-bold text-white text-xs sm:text-sm flex items-center gap-1.5 flex-wrap">
+                              <span>{pkg.name}</span>
+                              <span className="text-[10px] px-2 py-0.5 rounded-full bg-zinc-800 text-purple-300 font-semibold border border-zinc-700">
+                                {pkg.category}
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-zinc-400 mt-1 leading-relaxed">
+                              {pkg.detail}
+                            </p>
                           </div>
-                          <p className="text-[11px] text-zinc-400 mt-1 leading-relaxed">{pkg.detail}</p>
                         </div>
 
                         <div className="text-right shrink-0">
                           <div className="flex items-baseline justify-end gap-1.5">
-                            <span className="text-xs text-zinc-400 line-through">${pkg.originalPrice}</span>
-                            <span className="text-base font-black text-emerald-400">${pkg.price}</span>
+                            <span className="text-xs text-zinc-400 line-through">
+                              ${pkg.originalPrice * qty}
+                            </span>
+                            <span className="text-base font-black text-emerald-400">
+                              ${subtotal}
+                            </span>
                           </div>
                           <span className="text-[9px] bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 px-1.5 py-0.2 rounded font-bold uppercase tracking-wider block mt-0.5">
-                            Ahorras ${pkg.originalPrice - pkg.price} USD
+                            USD (${pkg.price} c/u)
                           </span>
                         </div>
                       </div>
 
-                      {/* Idea 4: Delivery Time & Guarantee Badges for this package */}
-                      <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-zinc-900 text-[10px]">
-                        <span className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-300 font-medium">
-                          <Clock className="w-3 h-3 text-amber-400" />
-                          <span>Entrega: <strong className="text-white">{pkg.deliveryTime}</strong></span>
-                        </span>
+                      {/* Delivery Time & Guarantee Badges */}
+                      <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-zinc-900 text-[10px]">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-300 font-medium">
+                            <Clock className="w-3 h-3 text-amber-400" />
+                            <span>
+                              Entrega: <strong className="text-white">{pkg.deliveryTime}</strong>
+                            </span>
+                          </span>
 
-                        <span className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-zinc-900 border border-zinc-800 text-emerald-300 font-medium">
-                          <ShieldCheck className="w-3 h-3 text-emerald-400" />
-                          <span>{pkg.guarantee}</span>
-                        </span>
+                          <span className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-zinc-900 border border-zinc-800 text-emerald-300 font-medium">
+                            <ShieldCheck className="w-3 h-3 text-emerald-400" />
+                            <span>{pkg.guarantee}</span>
+                          </span>
+                        </div>
 
-                        <span className="flex items-center gap-1 px-2 py-1 rounded-lg bg-zinc-900/60 text-zinc-400">
-                          <span>🔒 Sin contraseña</span>
-                        </span>
+                        {/* Quantity control per package */}
+                        <div className="flex items-center gap-1 bg-zinc-900 border border-zinc-800 rounded-lg px-1.5 py-0.5">
+                          <button
+                            type="button"
+                            onClick={() => setPkgQty(pkg.id, qty - 1)}
+                            className="w-5 h-5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 flex items-center justify-center cursor-pointer"
+                          >
+                            <Minus className="w-3 h-3" />
+                          </button>
+                          <span className="text-xs font-black text-white px-1.5">x{qty}</span>
+                          <button
+                            type="button"
+                            onClick={() => setPkgQty(pkg.id, qty + 1)}
+                            className="w-5 h-5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 flex items-center justify-center cursor-pointer"
+                          >
+                            <Plus className="w-3 h-3" />
+                          </button>
+                        </div>
                       </div>
 
                       {/* Individual Package Action Buttons */}
@@ -1249,42 +1426,76 @@ export const YouTubeMonetizationCalculator: React.FC<YouTubeMonetizationCalculat
                             {isJustAdded ? (
                               <>
                                 <Check className="w-3.5 h-3.5 text-white" />
-                                <span>¡Añadido!</span>
+                                <span>¡Añadido (x{qty})!</span>
                               </>
                             ) : (
                               <>
                                 <ShoppingBag className="w-3.5 h-3.5 text-purple-400" />
-                                <span>Añadir al Pedido</span>
+                                <span>Añadir {qty > 1 ? `x${qty} ` : ''}al Pedido</span>
                               </>
                             )}
                           </button>
                         ) : null}
 
-                        <a
-                          href={singleWaUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className={`py-2 px-2.5 rounded-xl text-xs font-bold bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 text-emerald-300 hover:text-white transition flex items-center justify-center gap-1.5 active:scale-95 ${
+                        <button
+                          type="button"
+                          onClick={() => handleSinglePackageWhatsApp(pkg)}
+                          className={`py-2 px-2.5 rounded-xl text-xs font-bold bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 text-emerald-300 hover:text-white transition flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer ${
                             !onAddToCart ? 'col-span-2' : ''
                           }`}
                         >
                           <MessageCircle className="w-3.5 h-3.5 text-emerald-400" />
                           <span>Pedir por WhatsApp</span>
-                        </a>
+                        </button>
                       </div>
                     </div>
                   );
                 })
               )}
             </div>
+
+            {/* Base C: Add All Selected Packages to Multi-Order Cart Button */}
+            {onAddToCart && planDiagnostic.packages.length > 0 && (
+              <div className="mt-3">
+                <button
+                  type="button"
+                  onClick={handleAddAllSelectedToCart}
+                  className={`w-full py-3 px-4 rounded-2xl text-xs sm:text-sm font-black transition flex items-center justify-center gap-2 cursor-pointer shadow-lg ${
+                    addedAllBanner
+                      ? 'bg-purple-600 text-white'
+                      : 'bg-purple-600/20 hover:bg-purple-600/30 text-purple-200 border border-purple-500/50'
+                  }`}
+                >
+                  {addedAllBanner ? (
+                    <>
+                      <CheckCircle2 className="w-4 h-4 text-white" />
+                      <span>
+                        ¡Se añadieron {planDiagnostic.selectedPackages.length || planDiagnostic.packages.length} paquetes a tu Pedido Conjunto!
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <ShoppingBag className="w-4 h-4 text-purple-400" />
+                      <span>
+                        Añadir los {planDiagnostic.selectedPackages.length || planDiagnostic.packages.length} Paquetes Seleccionados a mi Pedido (${planDiagnostic.total} USD)
+                      </span>
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Total Investment */}
           <div className="bg-zinc-950/90 border border-zinc-800 rounded-2xl p-4 space-y-2">
             <div className="flex items-center justify-between">
               <div>
-                <span className="text-xs text-zinc-400 block font-semibold">Total en Paquetes:</span>
-                <span className="text-[11px] text-emerald-400">Pago Móvil / Binance Pay ID {BINANCE_PAY_ID}</span>
+                <span className="text-xs text-zinc-400 block font-semibold">
+                  Total en Paquetes Seleccionados:
+                </span>
+                <span className="text-[11px] text-emerald-400">
+                  Pago Móvil ({paymentConfig.pagoMovil.bankCode}) / Binance Pay ID {paymentConfig.binancePayId}
+                </span>
               </div>
               <div className="text-right">
                 <span className="text-3xl font-black text-white">${planDiagnostic.total}</span>
@@ -1300,18 +1511,21 @@ export const YouTubeMonetizationCalculator: React.FC<YouTubeMonetizationCalculat
               className="w-full flex items-center justify-center gap-2.5 px-6 py-4 rounded-2xl font-black text-sm sm:text-base bg-emerald-600 hover:bg-emerald-500 text-white shadow-xl shadow-emerald-950/60 transition active:scale-95 cursor-pointer"
             >
               <MessageCircle className="w-5 h-5 fill-white" />
-              <span>Ponerse de Acuerdo por WhatsApp</span>
+              <span>Ponerse de Acuerdo por WhatsApp ({paymentConfig.whatsappDisplay})</span>
               <ArrowRight className="w-4 h-4 ml-1" />
             </button>
             <p className="text-[11px] text-zinc-400 text-center leading-relaxed">
-              Al tocar aquí se abrirá WhatsApp con el enlace de {activePlatform.name}, lo que te falta para monetizar, los paquetes y el total de ${planDiagnostic.total} USD para ponernos de acuerdo en la tasa y la entrega.
+              Al tocar aquí se abrirá WhatsApp con el enlace de {activePlatform.name}, el ritmo{' '}
+              {deliverySpeed === 'express'
+                ? 'Express (48 a 72 horas)'
+                : 'Progresivo (7 días en adelante)'}{' '}
+              y el total de ${planDiagnostic.total} USD.
             </p>
           </div>
-
         </div>
       </div>
 
-      {/* Idea #20: Simulador de Retorno de Inversión (ROI) y Proyección de Ganancias Post-Monetización */}
+      {/* ROI Simulator */}
       <ROICalculator
         platform={selectedPlatform}
         packageInvestmentUSD={planDiagnostic.total}

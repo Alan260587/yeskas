@@ -1,5 +1,7 @@
 export type SocialNetwork = 'facebook' | 'tiktok' | 'instagram' | 'youtube' | 'kick' | 'spotify' | 'special';
 
+export type DeliverySpeedMode = 'express' | 'progressive';
+
 export interface ServiceItem {
   id: string;
   network: SocialNetwork;
@@ -13,6 +15,8 @@ export interface ServiceItem {
   image: string;
   deliveryTime?: string;
   guarantee?: string;
+  hidden?: boolean;
+  isCustom?: boolean;
 }
 
 export interface DiagnosticPackageItem {
@@ -23,6 +27,15 @@ export interface DiagnosticPackageItem {
   category: string;
   deliveryTime?: string;
   guarantee?: string;
+}
+
+export interface DiagnosticPriceConfigItem {
+  id: string;
+  network: SocialNetwork;
+  name: string;
+  metric: string;
+  price: number;
+  unitDescription: string;
 }
 
 export interface SpecialPackage {
@@ -36,6 +49,7 @@ export interface SpecialPackage {
   isTodayOnly?: boolean;
   freeTrialAvailable?: boolean;
   image: string;
+  hidden?: boolean;
 }
 
 export interface CartItem {
@@ -52,4 +66,40 @@ export interface OrderDetails {
   usernameOrUrl: string;
   paymentMethod: string;
   clientNotes?: string;
+}
+
+export interface PaymentConfig {
+  whatsappPhone: string;
+  whatsappDisplay: string;
+  binancePayId: string;
+  pagoMovil: {
+    bank: string;
+    bankCode: string;
+    phone: string;
+    id: string;
+  };
+}
+
+export type OrderStatus = 'pendiente' | 'en_proceso' | 'completado' | 'cancelado';
+
+export interface OrderRecordItem {
+  name: string;
+  metric: string;
+  network: string;
+  unitPrice: number;
+  quantity: number;
+}
+
+export interface OrderRecord {
+  id: string;
+  createdAt: number;
+  source: 'catalogo_individual' | 'pedido_conjunto' | 'plan_monetizacion' | 'oferta_especial';
+  clientLink: string;
+  deliverySpeed: DeliverySpeedMode;
+  deliverySpeedLabel: string;
+  paymentMethod: string;
+  items: OrderRecordItem[];
+  totalUSD: number;
+  notes?: string;
+  status: OrderStatus;
 }

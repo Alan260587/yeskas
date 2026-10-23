@@ -18,22 +18,24 @@ import {
   Unlock, 
   KeyRound, 
   AlertCircle,
-  ShieldAlert
+  ShieldAlert,
+  FileUp
 } from 'lucide-react';
 import { generateInstructionsPDF } from '../utils/generateInstructionsPDF';
-import { 
-  WHATSAPP_DISPLAY, 
-  BINANCE_PAY_ID, 
-  PAGO_MOVIL_DATA 
-} from '../data/catalogData';
 import { useSession } from '../context/SessionContext';
+import { useCatalogConfig } from '../context/CatalogConfigContext';
+import { PdfUploadManager } from './PdfUploadManager';
+import { fetchAndSyncSavedPdfs } from '../utils/pdfStorage';
+
+export type InstructionsTabType = 'how' | 'client' | 'admin' | 'whatsapp' | 'requirements' | 'upload-pdfs';
 
 interface InstructionsModalProps {
   isOpen: boolean;
   onClose: () => void;
+  initialTab?: InstructionsTabType;
 }
 
-export const InstructionsModal: React.FC<InstructionsModalProps> = ({ isOpen, onClose }) => {
+export const InstructionsModal: React.FC<InstructionsModalProps> = ({ isOpen, onClose, initialTab = 'how' }) => {
   const {
     isAdmin: isAdminUnlocked,
     isAdminOccupiedByOther,
@@ -43,10 +45,21 @@ export const InstructionsModal: React.FC<InstructionsModalProps> = ({ isOpen, on
     loginAdmin,
     logoutAdmin,
   } = useSession();
+  const { paymentConfig } = useCatalogConfig();
 
-  const [activeTab, setActiveTab] = useState<'how' | 'client' | 'admin' | 'whatsapp' | 'requirements'>('how');
+  const [activeTab, setActiveTab] = useState<InstructionsTabType>(initialTab);
+  const [savedPdfCount, setSavedPdfCount] = useState<number>(0);
   const [isDownloading, setIsDownloading] = useState(false);
   const [copiedScript, setCopiedScript] = useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (isOpen) {
+      if (initialTab) {
+        setActiveTab(initialTab);
+      }
+      fetchAndSyncSavedPdfs().then((docs) => setSavedPdfCount(docs.length));
+    }
+  }, [isOpen, initialTab]);
 
   // Modal / prompt for locked action (download / print / direct unlock)
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
@@ -69,7 +82,7 @@ export const InstructionsModal: React.FC<InstructionsModalProps> = ({ isOpen, on
   const executeDownloadPDF = () => {
     try {
       setIsDownloading(true);
-      generateInstructionsPDF();
+      generateInstructionsPDF(paymentConfig);
       setTimeout(() => setIsDownloading(false), 900);
     } catch (err) {
       console.error('Error generating PDF:', err);
@@ -175,13 +188,14 @@ export const InstructionsModal: React.FC<InstructionsModalProps> = ({ isOpen, on
 • Suscriptores: 350 subs ➜ *Faltan: 650 subs* (Meta: 1,000 subs)
 
 📦 *PAQUETES DEL CATÁLOGO PARA MONETIZAR (CON GARANTÍA):*
-1. *Combo 3,000 Horas YouTube* (Garantía 30 días | Entrega Progresiva) ➜ *$65 USD*
-2. *1,000 Suscriptores Reales YouTube* (Garantía 30 días) ➜ *$35 USD*
+1. *1x Combo 3,000 Horas YouTube* (Garantía 30 días | Progresivo 7 días en adelante) ➜ *$65 USD*
+2. *1x 1,000 Suscriptores Reales YouTube* (Garantía 30 días | Express 48 a 72 horas) ➜ *$35 USD*
 ─────────────────────────
+⚡ *Ritmo y velocidad de entrega:* Modo Progresivo (7 días en adelante) / Modo Express (48 a 72 horas)
 💰 *PRESUPUESTO TOTAL ESTIMADO:* *$100 USD*
 
 🤝 *Quiero ponerme de acuerdo contigo por aquí:*
-Para confirmar la tasa para Pago Móvil (BDV 0102) o Binance Pay (ID: ${BINANCE_PAY_ID}), coordinar el inicio progresivo y recibir el soporte. ¡Quedo atento!`;
+Para confirmar la tasa para Pago Móvil (${paymentConfig.pagoMovil.bank} ${paymentConfig.pagoMovil.bankCode}) o Binance Pay (ID: ${paymentConfig.binancePayId}), coordinar el inicio y recibir el soporte. ¡Quedo atento!`;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/85 backdrop-blur-md animate-in fade-in duration-200">
@@ -229,6 +243,20 @@ Para confirmar la tasa para Pago Móvil (BDV 0102) o Binance Pay (ID: ${BINANCE_
           </div>
 
           <div className="flex items-center gap-2 self-end sm:self-auto flex-wrap">
+            {/* Quick Upload & Save PDFs button */}
+            <button
+              onClick={() => setActiveTab('upload-pdfs')}
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition cursor-pointer active:scale-95 ${
+                activeTab === 'upload-pdfs'
+                  ? 'bg-emerald-600 text-white border-emerald-400 shadow-lg shadow-emerald-950/50'
+                  : 'bg-emerald-950/60 hover:bg-emerald-900/70 text-emerald-300 border-emerald-500/40'
+              }`}
+              title="Subir y guardar 1 o hasta 10 archivos PDF"
+            >
+              <FileUp className="w-4 h-4 text-emerald-300" />
+              <span>Subir / Guardar PDFs ({savedPdfCount}/10)</span>
+            </button>
+
             {/* Quick Lock / Unlock button */}
             {isAdminUnlocked ? (
               <button
@@ -394,6 +422,24 @@ Para confirmar la tasa para Pago Móvil (BDV 0102) o Binance Pay (ID: ${BINANCE_
           >
             <TrendingUp className="w-3.5 h-3.5" />
             <span>5. Requisitos por Red (2026)</span>
+          </button>
+
+          {/* Tab 6: Subir y Guardar PDFs (1 a 10+) */}
+          <button
+            onClick={() => setActiveTab('upload-pdfs')}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-xl whitespace-nowrap transition cursor-pointer ${
+              activeTab === 'upload-pdfs'
+                ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md shadow-emerald-900/40'
+                : 'text-emerald-300 bg-emerald-950/30 border border-emerald-500/30 hover:bg-emerald-900/40'
+            }`}
+          >
+            <FileUp className="w-3.5 h-3.5" />
+            <span>6. Subir y Guardar PDFs (1 a 10)</span>
+            {savedPdfCount > 0 && (
+              <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-black/40 text-emerald-200 font-extrabold">
+                {savedPdfCount}
+              </span>
+            )}
           </button>
         </div>
 
@@ -653,8 +699,8 @@ Para confirmar la tasa para Pago Móvil (BDV 0102) o Binance Pay (ID: ${BINANCE_
                         Canales de Cobro Oficiales
                       </h4>
                       <ul className="text-xs text-zinc-400 space-y-1.5">
-                        <li>• <strong>Binance Pay ID:</strong> <span className="font-mono text-emerald-300 font-bold">{BINANCE_PAY_ID}</span> (recibes USDT neto, sin comisión).</li>
-                        <li>• <strong>Pago Móvil:</strong> {PAGO_MOVIL_DATA.bank} (0102), tlf {PAGO_MOVIL_DATA.phone}, CI {PAGO_MOVIL_DATA.id}. Tú le indicas la tasa del día en Bolívares.</li>
+                        <li>• <strong>Binance Pay ID:</strong> <span className="font-mono text-emerald-300 font-bold">{paymentConfig.binancePayId}</span> (recibes USDT neto, sin comisión).</li>
+                        <li>• <strong>Pago Móvil:</strong> {paymentConfig.pagoMovil.bank} ({paymentConfig.pagoMovil.bankCode}), tlf {paymentConfig.pagoMovil.phone}, CI {paymentConfig.pagoMovil.id}. Tú le indicas la tasa del día en Bolívares.</li>
                       </ul>
                     </div>
 
@@ -681,10 +727,10 @@ Para confirmar la tasa para Pago Móvil (BDV 0102) o Binance Pay (ID: ${BINANCE_
                     <div className="p-4 rounded-2xl bg-zinc-900/60 border border-zinc-800 space-y-2">
                       <h4 className="text-sm font-bold text-white flex items-center gap-2">
                         <Sparkles className="w-4 h-4 text-amber-400" />
-                        Entrega Segura y Garantía
+                        Ritmo de Entrega y Garantía
                       </h4>
                       <p className="text-xs text-zinc-400">
-                        Los pedidos comienzan entre 12 y 24 horas tras confirmar el pago. Cuentan con 30 días de garantía con reposición gratuita en caso de caídas algorítmicas.
+                        El cliente elige entre <strong>Modo Express (48 a 72 horas)</strong> o <strong>Modo Progresivo (7 días en adelante)</strong>. Todos los pedidos cuentan con 30 días de garantía de reposición gratuita.
                       </p>
                     </div>
                   </div>
@@ -858,11 +904,11 @@ Para confirmar la tasa para Pago Móvil (BDV 0102) o Binance Pay (ID: ${BINANCE_
                         <div className="text-xs">
                           <span className="text-blue-400 font-bold block mb-1">Paso 2: Elección de Método de Pago</span>
                           <p className="text-zinc-300">
-                            &quot;¿Prefieres pagar por Binance Pay (USDT neto a mi ID {BINANCE_PAY_ID}) o por Pago Móvil del Banco de Venezuela a la tasa del día en Bs?&quot;
+                            &quot;¿Prefieres pagar por Binance Pay (USDT neto a mi ID {paymentConfig.binancePayId}) o por Pago Móvil ({paymentConfig.pagoMovil.bank} {paymentConfig.pagoMovil.bankCode}) a la tasa del día en Bs?&quot;
                           </p>
                         </div>
                         <button
-                          onClick={() => handleCopy(`¿Prefieres pagar por Binance Pay (USDT neto a mi ID ${BINANCE_PAY_ID}) o por Pago Móvil del Banco de Venezuela a la tasa del día en Bs?`, 'p2')}
+                          onClick={() => handleCopy(`¿Prefieres pagar por Binance Pay (USDT neto a mi ID ${paymentConfig.binancePayId}) o por Pago Móvil (${paymentConfig.pagoMovil.bank} ${paymentConfig.pagoMovil.bankCode}) a la tasa del día en Bs?`, 'p2')}
                           className="p-1.5 rounded-lg bg-zinc-850 hover:bg-zinc-800 text-zinc-400 hover:text-white transition cursor-pointer shrink-0"
                           title="Copiar"
                         >
@@ -964,15 +1010,22 @@ Para confirmar la tasa para Pago Móvil (BDV 0102) o Binance Pay (ID: ${BINANCE_
               </div>
             </div>
           )}
+
+          {/* TAB 6: SUBIR Y GUARDAR PDFS (1 A 10+) */}
+          {activeTab === 'upload-pdfs' && (
+            <div className="animate-in fade-in duration-150">
+              <PdfUploadManager onCountChange={setSavedPdfCount} />
+            </div>
+          )}
         </div>
 
         {/* Footer actions bar */}
         <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-5 sm:px-8 py-4 border-t border-zinc-850 bg-zinc-900/90">
           <div className="text-xs text-zinc-400 flex items-center gap-2 flex-wrap">
             <span>Soporte:</span>
-            <strong className="text-white">{WHATSAPP_DISPLAY}</strong>
+            <strong className="text-white">{paymentConfig.whatsappDisplay}</strong>
             <span className="hidden sm:inline">• Binance ID:</span>
-            <strong className="text-white hidden sm:inline">{BINANCE_PAY_ID}</strong>
+            <strong className="text-white hidden sm:inline">{paymentConfig.binancePayId}</strong>
             <span className="hidden md:inline">• Clave Admin:</span>
             <span className="text-amber-400/90 font-mono font-bold hidden md:inline">****</span>
           </div>

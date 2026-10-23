@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { MessageSquare, Send, Bot, User, X, Sparkles, MessageCircle, ExternalLink } from 'lucide-react';
-import { WHATSAPP_DISPLAY, BINANCE_PAY_ID, PAGO_MOVIL_DATA, buildWhatsAppLink } from '../data/catalogData';
+import { Send, Bot, User, X, MessageCircle, ExternalLink } from 'lucide-react';
+import { buildWhatsAppLink } from '../data/catalogData';
+import { useCatalogConfig } from '../context/CatalogConfigContext';
 
 interface Message {
   id: string;
@@ -23,21 +24,22 @@ const INITIAL_MESSAGES: Message[] = [
   {
     id: 'm-1',
     sender: 'bot',
-    text: `¡Hola! 👋 Soy el asistente virtual automatizado de Growth Viral Pro.\n\nPuedo responder tus dudas sobre precios, métodos de pago (Pago Móvil, Binance), seguridad y paquetes de monetización. ¿En qué te puedo ayudar hoy?`,
+    text: `¡Hola! 👋 Soy el asistente virtual automatizado de Growth Viral Pro.\n\nPuedo responder tus dudas sobre precios en USD, ritmos de entrega (Modo Express 48 a 72 horas o Progresivo 7 días en adelante), métodos de pago y paquetes de monetización. ¿En qué te puedo ayudar hoy?`,
     time: 'Ahora',
   },
 ];
 
 const QUICK_PROMPTS = [
   { label: '🎯 Analizador Monetización Multi-Red', query: 'analizador monetizar redes paquetes' },
-  { label: '🎧 Spotify (15 USDT)', query: 'servicios spotify tarifas' },
+  { label: '⚡ Velocidad y Ritmo de Entrega', query: 'velocidad ritmo entrega express progresivo' },
+  { label: '🎧 Spotify Tarifas', query: 'servicios spotify tarifas' },
   { label: '💰 Precios Instagram & TikTok', query: 'precios instagram y tiktok' },
   { label: '💳 Métodos de Pago', query: 'metodos de pago' },
   { label: '🔥 Ofertas Solo por Hoy', query: 'ofertas solo por hoy' },
-  { label: '🎮 Precios de Kick Stream', query: 'precios kick' },
 ];
 
-export const ChatBot: React.FC<ChatBotProps> = ({ isOpen, onClose, onOpenCalculator }) => {
+export const ChatBot: React.FC<ChatBotProps> = ({ isOpen, onClose }) => {
+  const { paymentConfig, services } = useCatalogConfig();
   const [messages, setMessages] = useState<Message[]>(INITIAL_MESSAGES);
   const [inputText, setInputText] = useState('');
   const [isTyping, setIsTyping] = useState(false);
@@ -52,19 +54,45 @@ export const ChatBot: React.FC<ChatBotProps> = ({ isOpen, onClose, onOpenCalcula
   const generateBotReply = (query: string): { reply: string; action?: { label: string; waText: string } } => {
     const q = query.toLowerCase();
 
-    if (q.includes('metodo') || q.includes('pago') || q.includes('binance') || q.includes('pago movil') || q.includes('tasa') || q.includes('moneda') || q.includes('venezuela') || q.includes('0102')) {
+    if (
+      q.includes('velocidad') ||
+      q.includes('ritmo') ||
+      q.includes('entrega') ||
+      q.includes('express') ||
+      q.includes('progresivo') ||
+      q.includes('tiempo')
+    ) {
       return {
-        reply: `💳 *Datos de Pago Verificados:*\n\n🏦 **Pago Móvil (Venezuela):**\n• Banco: **${PAGO_MOVIL_DATA.bank} (${PAGO_MOVIL_DATA.bankCode})**\n• Teléfono: **${PAGO_MOVIL_DATA.phone}**\n• Cédula: **${PAGO_MOVIL_DATA.id}**\n*(Consulta la tasa del día por WhatsApp antes de transferir)*\n\n🟡 **Binance Pay (USDT):**\n• ID: **${BINANCE_PAY_ID}** (Cero comisión)\n\n📲 *Envía tu captura de pago al WhatsApp ${WHATSAPP_DISPLAY} para procesar tu orden al instante.*`,
+        reply: `🚀 **Ritmo y Velocidad de Entrega Oficial:**\n\n• ⚡ **Modo Express:** **48 a 72 horas** (Entrega acelerada ideal para cumplir metas rápido).\n• 🌱 **Modo Progresivo (Drip-Feed):** **7 días en adelante** (Crecimiento orgánico gradual para máxima protección del algoritmo).\n• 🛡️ Todos los paquetes cuentan con **Garantía de 30 Días Antidrop**.`,
+        action: {
+          label: 'Coordinar pedido y velocidad por WhatsApp',
+          waText: `¡Hola! Quiero realizar un pedido y elegir mi ritmo de entrega (Express 48 a 72 horas o Progresivo 7 días en adelante).`,
+        },
+      };
+    }
+
+    if (
+      q.includes('metodo') ||
+      q.includes('pago') ||
+      q.includes('binance') ||
+      q.includes('pago movil') ||
+      q.includes('tasa') ||
+      q.includes('moneda') ||
+      q.includes('venezuela') ||
+      q.includes('0102')
+    ) {
+      return {
+        reply: `💳 *Datos de Pago Verificados:*\n\n🏦 **Pago Móvil (Venezuela):**\n• Banco: **${paymentConfig.pagoMovil.bank} (${paymentConfig.pagoMovil.bankCode})**\n• Teléfono: **${paymentConfig.pagoMovil.phone}**\n• Cédula: **${paymentConfig.pagoMovil.id}**\n*(Consulta la tasa del día por WhatsApp antes de transferir)*\n\n🟡 **Binance Pay (USDT):**\n• ID: **${paymentConfig.binancePayId}** (Cero comisión)\n\n📲 *Envía tu captura de pago al WhatsApp ${paymentConfig.whatsappDisplay} para procesar tu orden al instante.*`,
         action: {
           label: 'Consultar tasa y confirmar por WhatsApp',
-          waText: `¡Hola! Quiero consultar la tasa del día para transferir por Pago Móvil (0102 / ${PAGO_MOVIL_DATA.phone}) o Binance (${BINANCE_PAY_ID}).`,
+          waText: `¡Hola! Quiero consultar la tasa del día para transferir por Pago Móvil (${paymentConfig.pagoMovil.bankCode} / ${paymentConfig.pagoMovil.phone}) o Binance (${paymentConfig.binancePayId}).`,
         },
       };
     }
 
     if (q.includes('oferta') || q.includes('paquete') || q.includes('solo por hoy')) {
       return {
-        reply: `🔥 **Ofertas Especiales "Solo por Hoy":**\n\n• **Impulso YouTube Básico ($15):** 358 Likes + 1000 Vistas garantizadas.\n• **Mega Crecimiento IG & TikTok:** 10,000 Seguidores para acelerar alcance.\n• **Plan YouTube Viral Masiva:** 1 Millón de Visitas + 10,000 Likes + 1,000 Comentarios.\n\nPuedes pedirlas directamente o agregarlas a tu pedido conjunto.`,
+        reply: `🔥 **Ofertas Especiales "Solo por Hoy":**\n\n• **Impulso YouTube Básico:** 358 Likes + 1,000 Vistas garantizadas.\n• **Mega Crecimiento IG & TikTok:** 10,000 Seguidores para acelerar alcance.\n• **Plan YouTube Viral Masiva:** 1 Millón de Visitas + 10,000 Likes + 1,000 Comentarios.\n\nPuedes añadir varios paquetes a tu pedido conjunto o pedirlos directamente.`,
         action: {
           label: 'Pedir ofertas especiales por WhatsApp',
           waText: '¡Hola! Me interesan las ofertas especiales del catálogo para mis redes.',
@@ -72,9 +100,16 @@ export const ChatBot: React.FC<ChatBotProps> = ({ isOpen, onClose, onOpenCalcula
       };
     }
 
-    if (q.includes('youtube') || q.includes('4000') || q.includes('monetiz') || q.includes('socio') || q.includes('horas') || q.includes('analizador')) {
+    if (
+      q.includes('youtube') ||
+      q.includes('4000') ||
+      q.includes('monetiz') ||
+      q.includes('socio') ||
+      q.includes('horas') ||
+      q.includes('analizador')
+    ) {
       return {
-        reply: `🎯 **Analizador de Monetización Multi-Red (YouTube, TikTok, Instagram, Facebook, Kick, Spotify):**\n\n• **Diagnóstico en vivo:** Eliges tu plataforma en la herramienta de la web, colocas tu enlace y el sistema evalúa tus métricas actuales en segundos.\n• **Déficit calculado:** Te indica con precisión cuántas horas, seguidores, vistas o streams te faltan para las metas oficiales de cada red.\n• **Paquetes recomendados:** Te selecciona los paquetes exactos del catálogo y calcula el total en USD.\n• **Ponerse de acuerdo:** Con un clic genera el mensaje estructurado para que acordemos la tasa de Pago Móvil (BDV 0102) o Binance (ID: ${BINANCE_PAY_ID}) y la entrega por WhatsApp.`,
+        reply: `🎯 **Analizador de Monetización Multi-Red (YouTube, TikTok, Instagram, Facebook, Kick, Spotify):**\n\n• **Diagnóstico en vivo:** Eliges tu plataforma, colocas tu enlace y evalúa tus métricas actuales.\n• **Multi-Paquete:** Puedes seleccionar uno, varios o todos los paquetes recomendados y ajustar cantidades.\n• **Ritmo de entrega:** Elige entre **Modo Express (48 a 72 horas)** o **Modo Progresivo (7 días en adelante)**.\n• **Pago verificado:** Coordina por Pago Móvil (${paymentConfig.pagoMovil.bankCode}) o Binance (ID: ${paymentConfig.binancePayId}).`,
         action: {
           label: 'Acordar plan de monetización por WhatsApp',
           waText: '¡Hola! Quiero revisar el plan de monetización de mi cuenta y ponernos de acuerdo en los paquetes del catálogo.',
@@ -82,39 +117,29 @@ export const ChatBot: React.FC<ChatBotProps> = ({ isOpen, onClose, onOpenCalcula
       };
     }
 
-    if (q.includes('segur') || q.includes('clave') || q.includes('contraseña') || q.includes('ban') || q.includes('bloqueo')) {
-      return {
-        reply: `🔒 **100% Seguro y Confiable:**\n\n• **NUNCA** te pediremos tu contraseña ni acceso a tu cuenta.\n• Solo necesitamos tu enlace público o @nombre_de_usuario.\n• La entrega se realiza de forma natural y progresiva para respetar las políticas de cada red social.`,
-        action: {
-          label: 'Consultar dudas al WhatsApp',
-          waText: '¡Hola! Tengo una consulta sobre la seguridad y entrega de los servicios.',
-        },
-      };
-    }
-
     if (q.includes('spotify') || q.includes('musica') || q.includes('oyente') || q.includes('pista') || q.includes('podcast')) {
+      const spotItems = services.filter((s) => s.network === 'spotify');
+      const listStr = spotItems
+        .slice(0, 6)
+        .map((s, idx) => `  ${idx + 1}. ${s.name} (${s.metric}): **$${s.price} USD**`)
+        .join('\n');
       return {
-        reply: `🎧 **Tarifario de Servicios Digitales para Spotify:**\n\n• **Tarifa Plana:** **15 USDT / $15 USD** por cada bloque de 1,000 unidades.\n\n• **Los 10 Servicios Disponibles:**\n  1. Reproducciones dirigidas - America Latina S4 - ACTUALIZADO\n  2. Reproducciones - Mundiales\n  3. Seguidores - America latina\n  4. Seguidores\n  5. Reproducciones (Pistas)\n  6. Anuncios (ADS)\n  7. Podcast\n  8. Guardar (Saves)\n  9. Oyentes Mensuales\n  10. Reproducciones premium dirigidas por pais\n\nTodos aplican a $15 por 1,000 unidades. ¡Puedes añadirlos al pedido conjunto o pedir por WhatsApp!`,
+        reply: `🎧 **Tarifario de Servicios Digitales para Spotify (Precios en USD):**\n\n${listStr}\n\n• Entrega Express (48 a 72 horas) o Progresiva (7 días en adelante).\n¡Puedes añadir varios paquetes juntos al carrito o pedir por WhatsApp!`,
         action: {
           label: 'Pedir servicios de Spotify por WhatsApp',
-          waText: '¡Hola! Me interesan los servicios de Spotify del tarifario (15 USDT por cada 1K).',
-        },
-      };
-    }
-
-    if (q.includes('kick') || q.includes('stream') || q.includes('viewer')) {
-      return {
-        reply: `🎮 **Planes de Crecimiento para Kick:**\n\n• **100 Viewers:**\n  - 1H: $5 | 2H: $7 | 3H: $3H: $9 | 4H: $11 | 5H: $13\n• **Seguidores Kick:**\n  - 100 Seg: $5 | 300 Seg: $7 | 500 Seg: $9 | 1K Seg: $12\n\n¡Crecimiento rápido para mejorar tus estadísticas de directo de inmediato!`,
-        action: {
-          label: 'Pedir servicio de Kick por WhatsApp',
-          waText: '¡Hola! Quiero contratar viewers o seguidores para mi canal de Kick.',
+          waText: '¡Hola! Me interesan los servicios de Spotify del catálogo.',
         },
       };
     }
 
     if (q.includes('instagram') || q.includes('ig') || q.includes('tiktok') || q.includes('seguidor') || q.includes('like') || q.includes('vista')) {
+      const igSeg = services.find((s) => s.id === 'ig-seg')?.price ?? 15;
+      const ttSeg = services.find((s) => s.id === 'tt-seg')?.price ?? 15;
+      const fbSeg = services.find((s) => s.id === 'fb-seg')?.price ?? 15;
+      const ytSeg = services.find((s) => s.id === 'yt-seg')?.price ?? 60;
+
       return {
-        reply: `🚀 **Precios Principales (Super Promo):**\n\n• **Instagram:** 1K Seg: $15 | 1K Likes: $10 | 1K Views: $10 | 1K Saves: $20 | 1K Coment: $30\n• **TikTok:** 1K Seg: $15 | 3K Views: $10 (Promo) | 1K Likes: $10 | 1K Saves: $15\n• **Facebook:** 1K Seg: $15 | 1K Likes: $10 | 1K Reels: $15\n• **YouTube:** 1K Seg: $60 | 1K Views: $15 | 1K Likes: $15\n\nPuedes armar un pedido con varios servicios juntos en el carrito y enviármelo a WhatsApp.`,
+        reply: `🚀 **Precios Actualizados en USD:**\n\n• **Instagram:** 1K Seg: $${igSeg} USD\n• **TikTok:** 1K Seg: $${ttSeg} USD\n• **Facebook:** 1K Seg: $${fbSeg} USD\n• **YouTube:** 1K Subs: $${ytSeg} USD\n• **Ritmo de entrega:** Modo Express (48 a 72 horas) o Modo Progresivo (7 días en adelante).\n\nPuedes armar un pedido con varios servicios juntos en el carrito y enviármelo a WhatsApp.`,
         action: {
           label: 'Hacer pedido por WhatsApp',
           waText: '¡Hola! Quiero cotizar varios servicios de seguidores e interacciones del catálogo.',
@@ -122,11 +147,10 @@ export const ChatBot: React.FC<ChatBotProps> = ({ isOpen, onClose, onOpenCalcula
       };
     }
 
-    // Default friendly response
     return {
-      reply: `Entiendo tu consulta sobre "${query}".\n\nPara darte atención personalizada y cotización exacta según tu caso, puedes hablar directamente con nuestro asesor por WhatsApp al ${WHATSAPP_DISPLAY}. Atendemos de inmediato.`,
+      reply: `Entiendo tu consulta sobre "${query}".\n\nPara darte atención personalizada y cotización exacta en USD, puedes hablar directamente con nuestro asesor por WhatsApp al ${paymentConfig.whatsappDisplay}. Atendemos de inmediato.`,
       action: {
-        label: `Hablar con Asesor (${WHATSAPP_DISPLAY})`,
+        label: `Hablar con Asesor (${paymentConfig.whatsappDisplay})`,
         waText: `¡Hola! Tengo una consulta sobre el catálogo: "${query}". ¿Me pueden ayudar?`,
       },
     };
@@ -158,7 +182,7 @@ export const ChatBot: React.FC<ChatBotProps> = ({ isOpen, onClose, onOpenCalcula
       };
       setMessages((prev) => [...prev, botMsg]);
       setIsTyping(false);
-    }, 600);
+    }, 500);
   };
 
   if (!isOpen) return null;
@@ -182,7 +206,7 @@ export const ChatBot: React.FC<ChatBotProps> = ({ isOpen, onClose, onOpenCalcula
               </span>
             </div>
             <p className="text-[11px] text-zinc-300">
-              Respuestas instantáneas • WhatsApp {WHATSAPP_DISPLAY}
+              Respuestas instantáneas • WhatsApp {paymentConfig.whatsappDisplay}
             </p>
           </div>
         </div>
@@ -219,11 +243,10 @@ export const ChatBot: React.FC<ChatBotProps> = ({ isOpen, onClose, onOpenCalcula
               >
                 {m.text}
 
-                {/* Suggested Action to WhatsApp */}
                 {m.suggestedAction && (
                   <div className="mt-3 pt-2.5 border-t border-zinc-800">
                     <a
-                      href={buildWhatsAppLink(m.suggestedAction.waText)}
+                      href={buildWhatsAppLink(m.suggestedAction.waText, paymentConfig.whatsappPhone)}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-md transition active:scale-95"
@@ -242,9 +265,7 @@ export const ChatBot: React.FC<ChatBotProps> = ({ isOpen, onClose, onOpenCalcula
                 </div>
               )}
             </div>
-            <span className="text-[10px] text-zinc-400 mt-1 px-8">
-              {m.time}
-            </span>
+            <span className="text-[10px] text-zinc-400 mt-1 px-8">{m.time}</span>
           </div>
         ))}
 

@@ -11,9 +11,11 @@ import {
   ShieldAlert,
   KeyRound,
   Users,
+  FileUp,
 } from 'lucide-react';
-import { WHATSAPP_DISPLAY, buildWhatsAppLink } from '../data/catalogData';
+import { buildWhatsAppLink } from '../data/catalogData';
 import { useSession } from '../context/SessionContext';
+import { useCatalogConfig } from '../context/CatalogConfigContext';
 
 interface NavbarProps {
   cartCount: number;
@@ -23,6 +25,7 @@ interface NavbarProps {
   onOpenBot: () => void;
   onScrollToOffers: () => void;
   onOpenInstructions: () => void;
+  onOpenUploadPdfs: () => void;
   onOpenAdminModal: () => void;
 }
 
@@ -34,13 +37,16 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenBot,
   onScrollToOffers,
   onOpenInstructions,
+  onOpenUploadPdfs,
   onOpenAdminModal,
 }) => {
   const [copiedLink, setCopiedLink] = useState(false);
   const { isAdmin, isAdminOccupiedByOther, totalUsers, myUserNumber } = useSession();
+  const { paymentConfig } = useCatalogConfig();
 
   const directWaUrl = buildWhatsAppLink(
-    '¡Hola! Me gustaría consultar información sobre los servicios del catálogo de crecimiento en redes.'
+    '¡Hola! Me gustaría consultar información sobre los servicios del catálogo de crecimiento en redes.',
+    paymentConfig.whatsappPhone
   );
 
   const handleShare = () => {
@@ -73,7 +79,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </span>
               </div>
               <p className="text-xs text-zinc-400 hidden sm:block">
-                Catálogo Oficial • WhatsApp {WHATSAPP_DISPLAY}
+                Catálogo Oficial • WhatsApp {paymentConfig.whatsappDisplay}
               </p>
             </div>
           </div>
@@ -102,6 +108,13 @@ export const Navbar: React.FC<NavbarProps> = ({
               Instructivo PDF
             </button>
             <button
+              onClick={onOpenUploadPdfs}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/25 transition-all cursor-pointer"
+            >
+              <FileUp className="w-3.5 h-3.5 text-emerald-400" />
+              Subir / Guardar PDFs
+            </button>
+            <button
               onClick={onOpenBot}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-cyan-500/10 text-cyan-400 border border-cyan-500/30 hover:bg-cyan-500/20 transition-all cursor-pointer"
             >
@@ -124,7 +137,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               }`}
               title={
                 isAdmin
-                  ? `Conectado como único Administrador (Usuario #${myUserNumber}). Se cerrará automáticamente al cerrar la página.`
+                  ? `Conectado como único Administrador (Usuario #${myUserNumber}). Haz clic para editar precios USD, productos, pagos o ver pedidos.`
                   : isAdminOccupiedByOther
                   ? 'Hay 1 Administrador conectado actualmente. Estás en Modo Usuario Normal (Cliente).'
                   : 'Estás en Modo Normal. Haz clic para ingresar clave (****) de Administrador (máx. 1 a la vez).'
@@ -133,7 +146,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               {isAdmin ? (
                 <>
                   <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                  <span className="hidden md:inline">Admin Activo (1/1)</span>
+                  <span className="hidden md:inline">Panel Admin (Precios USD)</span>
                   <span className="md:hidden">Admin</span>
                 </>
               ) : isAdminOccupiedByOther ? (
@@ -153,6 +166,16 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <Users className="w-2.5 h-2.5 text-cyan-400" />
                 {totalUsers}
               </span>
+            </button>
+
+            {/* Upload PDFs trigger for mobile / tablet */}
+            <button
+              onClick={onOpenUploadPdfs}
+              className="flex xl:hidden items-center gap-1.5 px-2.5 py-2 rounded-xl text-xs font-bold bg-emerald-950/70 hover:bg-emerald-900/70 border border-emerald-600/50 text-emerald-300 transition-all cursor-pointer"
+              title="Subir y Guardar PDFs (1 a 10)"
+            >
+              <FileUp className="w-3.5 h-3.5 text-emerald-400" />
+              <span className="hidden sm:inline">Subir PDFs</span>
             </button>
 
             {/* Instructivo PDF trigger for mobile / tablet */}
@@ -194,7 +217,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             >
               <MessageCircle className="w-4 h-4 fill-white shrink-0" />
               <span className="hidden lg:inline">WhatsApp:</span>
-              <span className="hidden sm:inline">{WHATSAPP_DISPLAY}</span>
+              <span className="hidden sm:inline">{paymentConfig.whatsappDisplay}</span>
             </a>
 
             {/* Cart & Multi-Order Trigger */}
@@ -223,4 +246,3 @@ export const Navbar: React.FC<NavbarProps> = ({
     </header>
   );
 };
-
