@@ -29,7 +29,7 @@ interface NavbarProps {
   onOpenAdminModal: () => void;
 }
 
-export const Navbar: React.FC<NavbarProps> = ({
+export const Navbar: React.FC<NavbarProps> = React.memo(({
   cartCount,
   cartTotal,
   onOpenCart,
@@ -59,14 +59,14 @@ export const Navbar: React.FC<NavbarProps> = ({
   };
 
   return (
-    <header className="sticky top-0 z-40 w-full bg-zinc-950/90 backdrop-blur-md border-b border-zinc-800 text-white">
+    <header className="sticky top-0 z-40 w-full bg-zinc-950/95 border-b border-zinc-800 text-white">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-18 gap-2">
           {/* Logo & Brand */}
           <div className="flex items-center gap-3 shrink-0">
             <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-rose-500 via-purple-600 to-cyan-400 p-0.5 flex items-center justify-center shadow-lg shadow-purple-500/20">
               <div className="w-full h-full bg-zinc-950 rounded-[10px] flex items-center justify-center">
-                <Sparkles className="w-5 h-5 text-purple-400 animate-pulse" />
+                <Sparkles className="w-5 h-5 text-purple-400" />
               </div>
             </div>
             <div>
@@ -237,7 +237,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               )}
 
               {cartCount > 0 && (
-                <span className="absolute -top-1 -right-1 w-3 h-3 bg-rose-500 rounded-full animate-ping" />
+                <span className="absolute -top-1 -right-1 w-3 h-3 bg-rose-500 rounded-full" />
               )}
             </button>
           </div>
@@ -245,4 +245,4 @@ export const Navbar: React.FC<NavbarProps> = ({
       </div>
     </header>
   );
-};
+});

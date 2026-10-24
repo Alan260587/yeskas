@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   ShoppingBag,
   X,
@@ -24,7 +24,7 @@ interface MultiOrderCartModalProps {
   onUpdateQuantity: (id: string, delta: number) => void;
   onRemoveItem: (id: string) => void;
   onClearCart: () => void;
-  onAddToCart?: (service: ServiceItem, quantity?: number) => void;
+  onAddToCart?: (service: ServiceItem, quantity?: number, deliverySpeed?: DeliverySpeedMode) => void;
 }
 
 export const MultiOrderCartModal: React.FC<MultiOrderCartModalProps> = ({
@@ -53,21 +53,18 @@ export const MultiOrderCartModal: React.FC<MultiOrderCartModalProps> = ({
     );
   }, [paymentConfig]);
 
-  if (!isOpen) return null;
+  const totalUnits = useMemo(
+    () => items.reduce((sum, item) => sum + item.quantity, 0),
+    [items]
+  );
 
-  const total = items.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0);
+  const total = useMemo(
+    () => items.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0),
+    [items]
+  );
 
-  const handleQuickAddService = () => {
-    if (!onAddToCart || !quickAddServiceId) return;
-    const found = services.find((s) => s.id === quickAddServiceId);
-    if (found) {
-      onAddToCart(found, quickAddQty);
-      setQuickAddQty(1);
-    }
-  };
-
-  const handleSendToWhatsApp = () => {
-    if (items.length === 0) return;
+  const whatsappHref = useMemo(() => {
+    if (items.length === 0) return '#';
 
     const speedLabel =
       deliverySpeed === 'express'
@@ -81,7 +78,13 @@ export const MultiOrderCartModal: React.FC<MultiOrderCartModalProps> = ({
     const message = buildMultiOrderWhatsAppMessage(
       items.map((i) => ({
         name: i.name,
-        metric: i.metric,
+        metric: `${i.metric}${
+          i.deliverySpeed
+            ? i.deliverySpeed === 'progressive'
+              ? ' [Progresivo 7d+]'
+              : ' [Express 48-72h]'
+            : ''
+        }`,
         network: i.network,
         unitPrice: i.unitPrice,
         quantity: i.quantity,
@@ -91,7 +94,23 @@ export const MultiOrderCartModal: React.FC<MultiOrderCartModalProps> = ({
       paymentConfig
     );
 
-    // Record in Admin Order History (#9)
+    return buildWhatsAppLink(message, paymentConfig.whatsappPhone);
+  }, [items, total, deliverySpeed, clientNotes, usernameOrUrl, paymentMethod, paymentConfig]);
+
+  if (!isOpen) return null;
+
+  const handleQuickAddService = () => {
+    if (!onAddToCart || !quickAddServiceId) return;
+    const found = services.find((s) => s.id === quickAddServiceId);
+    if (found) {
+      onAddToCart(found, quickAddQty, deliverySpeed);
+      setQuickAddQty(1);
+    }
+  };
+
+  const handleRecordOrderOnSend = () => {
+    if (items.length === 0) return;
+
     recordOrder({
       source: 'pedido_conjunto',
       clientLink: usernameOrUrl.trim() || 'Por confirmar en WhatsApp',
@@ -111,56 +130,59 @@ export const MultiOrderCartModal: React.FC<MultiOrderCartModalProps> = ({
       totalUSD: total,
       notes: clientNotes,
     });
-
-    const link = buildWhatsAppLink(message, paymentConfig.whatsappPhone);
-    window.open(link, '_blank');
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md">
-      <div className="bg-zinc-950 border border-zinc-800 rounded-3xl w-full max-w-2xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-        {/* Header */}
-        <div className="px-5 sm:px-6 py-4.5 border-b border-zinc-800/80 flex items-center justify-between bg-zinc-900/50">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/85"
+      onClick={onClose}
+    >
+      <div
+        className="bg-zinc-950 border border-purple-500/40 rounded-3xl w-full max-w-2xl max-h-[94vh] flex flex-col shadow-2xl overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header (shrink-0 so it never collapses) */}
+        <div className="shrink-0 px-4 sm:px-6 py-3.5 border-b border-zinc-800 flex items-center justify-between bg-zinc-900">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-purple-600/20 border border-purple-500/30 flex items-center justify-center text-purple-400">
+            <div className="w-10 h-10 rounded-xl bg-purple-600/20 border border-purple-500/40 flex items-center justify-center text-purple-400 shrink-0">
               <ShoppingBag className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-base sm:text-lg font-black text-white flex items-center gap-2">
-                Mi Pedido Conjunto (Multi-Paquete)
-                <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30">
-                  {items.length} {items.length === 1 ? 'servicio' : 'servicios'}
+              <h2 className="text-sm sm:text-lg font-black text-white flex items-center gap-2 flex-wrap">
+                <span>Mi Carrito / Pedido Conjunto</span>
+                <span className="text-xs font-black px-2.5 py-0.5 rounded-full bg-purple-600 text-white">
+                  {items.length} {items.length === 1 ? 'producto' : 'productos'} ({totalUnits} ud.)
                 </span>
               </h2>
-              <p className="text-xs text-zinc-300">
-                Se enviará directamente al WhatsApp {paymentConfig.whatsappDisplay}
+              <p className="text-[11px] sm:text-xs text-emerald-400 font-semibold">
+                WhatsApp directo: {paymentConfig.whatsappDisplay} • Total: ${total} USD
               </p>
             </div>
           </div>
 
           <button
             onClick={onClose}
-            className="w-9 h-9 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white flex items-center justify-center transition cursor-pointer"
+            className="w-9 h-9 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white flex items-center justify-center transition cursor-pointer shrink-0"
             aria-label="Cerrar ventana"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Scrollable Content */}
-        <div className="p-5 sm:p-6 overflow-y-auto space-y-5 flex-1">
-          {/* Base C: Quick Add Multiple Services Selector right inside the cart */}
+        {/* Scrollable Content (min-h-0 flex-1 so it ALWAYS scrolls properly even with 2, 5, or 20 products) */}
+        <div className="flex-1 min-h-0 p-4 sm:p-6 overflow-y-auto space-y-4">
+          {/* Quick Add Multiple Services Selector right inside the cart */}
           {onAddToCart && (
-            <div className="bg-purple-950/20 border border-purple-500/30 rounded-2xl p-3.5 space-y-2">
-              <label className="block text-xs font-black text-purple-300 flex items-center gap-1.5">
-                <PlusCircle className="w-4 h-4 text-purple-400" />
-                <span>Añadir más servicios o paquetes a este mismo pedido:</span>
+            <div className="bg-purple-950/30 border border-purple-500/40 rounded-2xl p-3 space-y-2">
+              <label className="text-xs font-black text-purple-200 flex items-center gap-1.5">
+                <PlusCircle className="w-4 h-4 text-purple-400 shrink-0" />
+                <span>Añadir otro producto o paquete a este mismo pedido:</span>
               </label>
               <div className="flex flex-col sm:flex-row gap-2">
                 <select
                   value={quickAddServiceId}
                   onChange={(e) => setQuickAddServiceId(e.target.value)}
-                  className="flex-1 bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-500"
+                  className="flex-1 bg-zinc-950 border border-zinc-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-500"
                 >
                   <option value="">Selecciona otro paquete del catálogo para sumar...</option>
                   {services.map((s) => (
@@ -171,7 +193,7 @@ export const MultiOrderCartModal: React.FC<MultiOrderCartModalProps> = ({
                 </select>
 
                 <div className="flex items-center gap-2">
-                  <div className="flex items-center gap-1 bg-zinc-950 border border-zinc-800 rounded-xl px-2 py-1.5">
+                  <div className="flex items-center gap-1 bg-zinc-950 border border-zinc-700 rounded-xl px-2 py-1.5">
                     <button
                       type="button"
                       onClick={() => setQuickAddQty((q) => Math.max(1, q - 1))}
@@ -195,7 +217,7 @@ export const MultiOrderCartModal: React.FC<MultiOrderCartModalProps> = ({
                     onClick={handleQuickAddService}
                     className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 disabled:opacity-40 text-white text-xs font-black transition cursor-pointer whitespace-nowrap"
                   >
-                    + Añadir al Pedido
+                    + Sumar al Carrito
                   </button>
                 </div>
               </div>
@@ -203,72 +225,82 @@ export const MultiOrderCartModal: React.FC<MultiOrderCartModalProps> = ({
           )}
 
           {items.length === 0 ? (
-            <div className="text-center py-10 px-4">
-              <div className="w-16 h-16 rounded-2xl bg-zinc-900 border border-zinc-800 flex items-center justify-center mx-auto mb-4 text-zinc-500">
-                <ShoppingBag className="w-8 h-8" />
+            <div className="text-center py-8 px-4">
+              <div className="w-14 h-14 rounded-2xl bg-zinc-900 border border-zinc-800 flex items-center justify-center mx-auto mb-3 text-zinc-500">
+                <ShoppingBag className="w-7 h-7" />
               </div>
               <h3 className="text-base font-bold text-white mb-1">
-                Aún no has añadido servicios a tu pedido
+                Tu carrito está vacío
               </h3>
-              <p className="text-xs sm:text-sm text-zinc-300 max-w-md mx-auto mb-6">
-                Selecciona arriba un paquete o explora el catálogo para combinar varios servicios de Instagram, TikTok, YouTube, Facebook, Kick o Spotify en un solo pedido.
+              <p className="text-xs sm:text-sm text-zinc-300 max-w-md mx-auto mb-5">
+                Selecciona arriba un paquete o agrega 1, 2 o más productos desde el catálogo para enviarlos juntos en un solo pedido de WhatsApp.
               </p>
               <button
                 onClick={onClose}
                 className="px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs sm:text-sm font-bold transition cursor-pointer"
               >
-                Ver Catálogo de Promociones
+                Explorar Catálogo de Productos
               </button>
             </div>
           ) : (
             <>
-              {/* Items List */}
-              <div className="space-y-3">
-                <div className="flex justify-between items-center text-xs text-zinc-300 font-semibold px-1">
-                  <span>Servicios seleccionados ({items.length})</span>
+              {/* Selected Items List */}
+              <div className="space-y-2.5">
+                <div className="flex justify-between items-center text-xs text-zinc-300 font-bold px-1">
+                  <span>
+                    Productos en tu carrito ({items.length}{' '}
+                    {items.length === 1 ? 'producto' : 'productos distintos'}):
+                  </span>
                   <button
                     onClick={onClearCart}
                     className="text-rose-400 hover:text-rose-300 text-xs flex items-center gap-1 cursor-pointer transition"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
-                    Vaciar todo
+                    Vaciar carrito
                   </button>
                 </div>
 
-                <div className="space-y-2.5">
-                  {items.map((item) => {
+                <div className="space-y-2">
+                  {items.map((item, idx) => {
                     const subtotal = item.unitPrice * item.quantity;
                     return (
                       <div
                         key={item.id}
-                        className="bg-zinc-900/90 border border-zinc-800/80 rounded-2xl p-3.5 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                        className="bg-zinc-900 border border-zinc-800 rounded-2xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5"
                       >
-                        <div className="flex items-center gap-3">
-                          <span className="text-xs uppercase font-extrabold px-2 py-0.5 rounded-md bg-zinc-800 text-zinc-300 border border-zinc-700">
+                        <div className="flex items-start sm:items-center gap-2.5">
+                          <span className="w-6 h-6 rounded-lg bg-purple-600/20 border border-purple-500/40 text-purple-300 font-black text-xs flex items-center justify-center shrink-0">
+                            {idx + 1}
+                          </span>
+                          <span className="text-[10px] uppercase font-extrabold px-2 py-0.5 rounded-md bg-zinc-800 text-zinc-200 border border-zinc-700 shrink-0">
                             {item.network}
                           </span>
                           <div>
-                            <div className="text-sm font-bold text-white">{item.name}</div>
-                            <div className="text-xs text-purple-400 font-medium">
+                            <div className="text-xs sm:text-sm font-bold text-white leading-snug">
+                              {item.name}
+                            </div>
+                            <div className="text-[11px] text-purple-300 font-medium">
                               {item.metric} • ${item.unitPrice} USD c/u
                             </div>
                           </div>
                         </div>
 
                         {/* Quantity Controls & Price */}
-                        <div className="flex items-center justify-between sm:justify-end gap-4 self-end sm:self-auto w-full sm:w-auto">
-                          <div className="flex items-center gap-2 bg-zinc-950 border border-zinc-800 rounded-xl px-2 py-1">
+                        <div className="flex items-center justify-between sm:justify-end gap-3 self-end sm:self-auto w-full sm:w-auto pt-1 sm:pt-0 border-t sm:border-t-0 border-zinc-800/80">
+                          <div className="flex items-center gap-1.5 bg-zinc-950 border border-zinc-800 rounded-xl px-2 py-1">
                             <button
+                              type="button"
                               onClick={() => onUpdateQuantity(item.id, -1)}
                               className="w-6 h-6 rounded-lg bg-zinc-800 hover:bg-zinc-700 flex items-center justify-center text-zinc-300 hover:text-white transition cursor-pointer"
                               aria-label="Disminuir cantidad"
                             >
                               <Minus className="w-3.5 h-3.5" />
                             </button>
-                            <span className="text-xs font-bold text-white w-6 text-center">
-                              {item.quantity}
+                            <span className="text-xs font-black text-white w-6 text-center">
+                              x{item.quantity}
                             </span>
                             <button
+                              type="button"
                               onClick={() => onUpdateQuantity(item.id, 1)}
                               className="w-6 h-6 rounded-lg bg-zinc-800 hover:bg-zinc-700 flex items-center justify-center text-zinc-300 hover:text-white transition cursor-pointer"
                               aria-label="Aumentar cantidad"
@@ -277,15 +309,17 @@ export const MultiOrderCartModal: React.FC<MultiOrderCartModalProps> = ({
                             </button>
                           </div>
 
-                          <div className="text-right min-w-[70px]">
-                            <div className="text-sm font-black text-emerald-400">${subtotal}</div>
-                            <div className="text-[10px] text-zinc-300">USD</div>
+                          <div className="text-right min-w-[65px]">
+                            <div className="text-sm font-black text-emerald-400">
+                              ${subtotal} USD
+                            </div>
                           </div>
 
                           <button
+                            type="button"
                             onClick={() => onRemoveItem(item.id)}
-                            className="p-1.5 text-zinc-500 hover:text-rose-400 transition cursor-pointer"
-                            title="Eliminar"
+                            className="p-1.5 text-zinc-400 hover:text-rose-400 transition cursor-pointer"
+                            title="Eliminar producto"
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
@@ -296,81 +330,58 @@ export const MultiOrderCartModal: React.FC<MultiOrderCartModalProps> = ({
                 </div>
               </div>
 
-              {/* Order Metadata Inputs */}
-              <div className="bg-zinc-900/60 border border-zinc-800 rounded-2xl p-4 sm:p-5 space-y-4">
-                <h4 className="text-xs uppercase tracking-wider text-zinc-300 font-bold">
-                  Datos para tu Pedido por WhatsApp
+              {/* Order Details Form */}
+              <div className="bg-zinc-900/80 border border-zinc-800 rounded-2xl p-3.5 sm:p-4 space-y-3">
+                <h4 className="text-xs uppercase tracking-wider text-emerald-400 font-black flex items-center gap-1.5">
+                  <MessageCircle className="w-3.5 h-3.5" />
+                  <span>Datos para Mandar tu Pedido a WhatsApp</span>
                 </h4>
 
-                <div>
-                  <label className="block text-xs font-semibold text-zinc-300 mb-1">
-                    Enlace de tu perfil, video o canal (o varios enlaces separados por coma):
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="Ej. @miusuario o https://instagram.com/miusuario"
-                    value={usernameOrUrl}
-                    onChange={(e) => setUsernameOrUrl(e.target.value)}
-                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-purple-500 transition"
-                  />
-                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold text-zinc-300 mb-1">
+                      Tu enlace o usuario (opcional):
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Ej. @miusuario o link de tu perfil/canal"
+                      value={usernameOrUrl}
+                      onChange={(e) => setUsernameOrUrl(e.target.value)}
+                      className="w-full bg-zinc-950 border border-zinc-700 rounded-xl px-3 py-2 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-purple-500"
+                    />
+                  </div>
 
-                <div>
-                  <div className="flex justify-between items-center mb-1">
-                    <label className="text-xs font-semibold text-zinc-300">
+                  <div>
+                    <label className="block text-[11px] font-bold text-zinc-300 mb-1">
                       Método de Pago Preferido:
                     </label>
-                    <span className="text-[11px] text-emerald-400 font-semibold">
-                      Datos verificados
-                    </span>
-                  </div>
-                  <select
-                    value={paymentMethod}
-                    onChange={(e) => setPaymentMethod(e.target.value)}
-                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2 text-sm text-white focus:outline-none focus:border-purple-500 transition"
-                  >
-                    <option
-                      value={`Pago Móvil (${paymentConfig.pagoMovil.bank} ${paymentConfig.pagoMovil.bankCode} - ${paymentConfig.pagoMovil.phone})`}
+                    <select
+                      value={paymentMethod}
+                      onChange={(e) => setPaymentMethod(e.target.value)}
+                      className="w-full bg-zinc-950 border border-zinc-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-500"
                     >
-                      Pago Móvil ({paymentConfig.pagoMovil.bank} {paymentConfig.pagoMovil.bankCode} -{' '}
-                      {paymentConfig.pagoMovil.phone})
-                    </option>
-                    <option value={`Binance Pay (ID: ${paymentConfig.binancePayId})`}>
-                      Binance Pay (ID: {paymentConfig.binancePayId})
-                    </option>
-                    <option value="Zelle / Criptomonedas (Por WhatsApp)">
-                      Zelle / Criptomonedas (Por WhatsApp)
-                    </option>
-                    <option value="PayPal / Otro método internacional">
-                      PayPal / Otro método internacional
-                    </option>
-                  </select>
-
-                  {/* Quick info helper box */}
-                  <div className="mt-2 p-2.5 rounded-xl bg-zinc-950 border border-zinc-800 text-[11px] text-zinc-300 flex items-center justify-between">
-                    <div>
-                      {paymentMethod.includes('Pago Móvil') ? (
-                        <span>
-                          🏦 <strong>{paymentConfig.pagoMovil.bank}:</strong>{' '}
-                          {paymentConfig.pagoMovil.bankCode} • Tel:{' '}
-                          <strong>{paymentConfig.pagoMovil.phone}</strong> • C.I:{' '}
-                          <strong>{paymentConfig.pagoMovil.id}</strong>
-                        </span>
-                      ) : (
-                        <span>
-                          🟡 <strong>Binance Pay:</strong> ID{' '}
-                          <strong>{paymentConfig.binancePayId}</strong> (Cero comisión)
-                        </span>
-                      )}
-                    </div>
-                    <span className="text-emerald-400 font-semibold text-[10px]">Verificado</span>
+                      <option
+                        value={`Pago Móvil (${paymentConfig.pagoMovil.bank} ${paymentConfig.pagoMovil.bankCode} - ${paymentConfig.pagoMovil.phone})`}
+                      >
+                        Pago Móvil ({paymentConfig.pagoMovil.bank} {paymentConfig.pagoMovil.bankCode})
+                      </option>
+                      <option value={`Binance Pay (ID: ${paymentConfig.binancePayId})`}>
+                        Binance Pay (ID: {paymentConfig.binancePayId})
+                      </option>
+                      <option value="Zelle / Criptomonedas (Por WhatsApp)">
+                        Zelle / Criptomonedas
+                      </option>
+                      <option value="PayPal / Otro método internacional">
+                        PayPal / Otro método
+                      </option>
+                    </select>
                   </div>
                 </div>
 
-                {/* Base B: Delivery Speed Selector (Express 48-72h vs Progresivo 7 días en adelante) */}
+                {/* Delivery Speed Selector (Express 48-72h vs Progresivo 7 días en adelante) */}
                 <div>
-                  <label className="block text-xs font-semibold text-zinc-300 mb-1">
-                    Ritmo y Velocidad de Entrega (Para todos los paquetes):
+                  <label className="block text-[11px] font-bold text-zinc-300 mb-1.5">
+                    Ritmo y Velocidad de Entrega:
                   </label>
                   <div className="grid grid-cols-2 gap-2">
                     <button
@@ -378,7 +389,7 @@ export const MultiOrderCartModal: React.FC<MultiOrderCartModalProps> = ({
                       onClick={() => setDeliverySpeed('express')}
                       className={`p-2.5 rounded-xl border text-left transition cursor-pointer ${
                         deliverySpeed === 'express'
-                          ? 'bg-amber-500/15 border-amber-500/60 text-white'
+                          ? 'bg-amber-500/20 border-amber-500 text-white'
                           : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:text-white'
                       }`}
                     >
@@ -386,10 +397,7 @@ export const MultiOrderCartModal: React.FC<MultiOrderCartModalProps> = ({
                         <Zap className="w-3.5 h-3.5" />
                         <span>Modo Express</span>
                       </div>
-                      <div className="text-[11px] font-bold text-white mt-0.5">
-                        48 a 72 horas
-                      </div>
-                      <div className="text-[10px] text-zinc-400">Entrega acelerada</div>
+                      <div className="text-[11px] font-bold text-white">48 a 72 horas</div>
                     </button>
 
                     <button
@@ -397,7 +405,7 @@ export const MultiOrderCartModal: React.FC<MultiOrderCartModalProps> = ({
                       onClick={() => setDeliverySpeed('progressive')}
                       className={`p-2.5 rounded-xl border text-left transition cursor-pointer ${
                         deliverySpeed === 'progressive'
-                          ? 'bg-emerald-500/15 border-emerald-500/60 text-white'
+                          ? 'bg-emerald-500/20 border-emerald-500 text-white'
                           : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:text-white'
                       }`}
                     >
@@ -405,73 +413,70 @@ export const MultiOrderCartModal: React.FC<MultiOrderCartModalProps> = ({
                         <Clock className="w-3.5 h-3.5" />
                         <span>Modo Progresivo</span>
                       </div>
-                      <div className="text-[11px] font-bold text-white mt-0.5">
-                        7 días en adelante
-                      </div>
-                      <div className="text-[10px] text-zinc-400">Drip-feed natural</div>
+                      <div className="text-[11px] font-bold text-white">7 días en adelante</div>
                     </button>
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-zinc-300 mb-1">
-                    Notas adicionales o distribución del pedido (opcional):
+                  <label className="block text-[11px] font-bold text-zinc-300 mb-1">
+                    Notas adicionales o cómo repartir tus paquetes (opcional):
                   </label>
                   <input
                     type="text"
-                    placeholder="Ej. 'Dividir los likes en mis últimos 2 videos'"
+                    placeholder="Ej. 'Repartir los likes en mis últimos 2 videos'"
                     value={clientNotes}
                     onChange={(e) => setClientNotes(e.target.value)}
-                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-purple-500 transition"
+                    className="w-full bg-zinc-950 border border-zinc-700 rounded-xl px-3 py-2 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-purple-500"
                   />
-                </div>
-              </div>
-
-              {/* Guarantees */}
-              <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-zinc-300 pt-1">
-                <div className="flex items-center gap-1.5">
-                  <ShieldCheck className="w-4 h-4 text-emerald-400" />
-                  <span>Nunca te pediremos contraseña</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <CheckCircle2 className="w-4 h-4 text-purple-400" />
-                  <span>Atención directa por WhatsApp</span>
                 </div>
               </div>
             </>
           )}
         </div>
 
-        {/* Footer with Total and CTA */}
+        {/* ALWAYS-VISIBLE STICKY FOOTER FOR WHATSAPP SEND (shrink-0 guarantees it NEVER disappears with 2+ products) */}
         {items.length > 0 && (
-          <div className="p-5 sm:p-6 border-t border-zinc-800/80 bg-zinc-900/80 space-y-3">
-            <div className="flex items-center justify-between">
+          <div className="shrink-0 p-4 sm:p-5 border-t border-emerald-500/40 bg-gradient-to-r from-zinc-900 via-emerald-950/40 to-zinc-900 space-y-2.5">
+            <div className="flex items-center justify-between gap-2">
               <div>
-                <span className="text-xs text-zinc-300 font-semibold block">Total a pagar:</span>
-                <span className="text-xs text-emerald-400 font-medium">
+                <div className="text-xs font-black text-white flex items-center gap-1.5">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <span>
+                    Resumen: {items.length}{' '}
+                    {items.length === 1 ? 'producto' : 'productos'} ({totalUnits} paq.)
+                  </span>
+                </div>
+                <span className="text-[11px] text-emerald-300 font-semibold block">
                   Ritmo:{' '}
                   {deliverySpeed === 'express'
-                    ? 'Express (48 a 72 horas)'
-                    : 'Progresivo (7 días en adelante)'}
+                    ? '⚡ Express (48 a 72 horas)'
+                    : '🌱 Progresivo (7 días en adelante)'}
                 </span>
               </div>
               <div className="text-right">
-                <span className="text-2xl sm:text-3xl font-black text-white">${total}</span>
-                <span className="text-xs font-semibold text-zinc-300 ml-1">USD</span>
+                <span className="text-[11px] text-zinc-300 font-bold mr-1">Total:</span>
+                <span className="text-2xl sm:text-3xl font-black text-emerald-400">
+                  ${total}
+                </span>
+                <span className="text-xs font-bold text-white ml-1">USD</span>
               </div>
             </div>
 
-            <button
-              onClick={handleSendToWhatsApp}
-              className="w-full flex items-center justify-center gap-2.5 px-6 py-4 rounded-2xl font-black text-sm sm:text-base bg-emerald-600 hover:bg-emerald-500 text-white shadow-xl shadow-emerald-950/60 transition active:scale-95 cursor-pointer"
+            <a
+              href={whatsappHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={handleRecordOrderOnSend}
+              className="w-full flex items-center justify-center gap-2.5 px-5 py-3.5 rounded-2xl font-black text-sm sm:text-base bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-950/60 transition active:scale-95 cursor-pointer"
             >
-              <MessageCircle className="w-5 h-5 fill-white" />
-              <span>Enviar Pedido a WhatsApp ({paymentConfig.whatsappDisplay})</span>
-              <ArrowRight className="w-4 h-4 ml-1" />
-            </button>
-            <p className="text-[11px] text-zinc-300 text-center">
-              Al hacer clic se abrirá WhatsApp con el resumen de tu pedido listo para enviar.
-            </p>
+              <MessageCircle className="w-5 h-5 fill-white shrink-0" />
+              <span>
+                Mandar Pedido ({items.length}{' '}
+                {items.length === 1 ? 'Producto' : 'Productos'}) a WhatsApp — ${total} USD
+              </span>
+              <ArrowRight className="w-4 h-4 shrink-0" />
+            </a>
           </div>
         )}
       </div>

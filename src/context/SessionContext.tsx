@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useRef, useState, useCallback } from 'react';
+import React, { createContext, useContext, useEffect, useRef, useState, useCallback, useMemo } from 'react';
 
 export interface ConnectedUser {
   sessionId: string;
@@ -73,8 +73,25 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const applyServerState = useCallback((data: any) => {
     if (!data || !Array.isArray(data.users)) return;
     serverAvailableRef.current = true;
-    setUsers(data.users);
-    setActiveAdminSessionId(data.activeAdminSessionId ?? null);
+    const nextAdminId = data.activeAdminSessionId ?? null;
+    setActiveAdminSessionId((prev) => (prev === nextAdminId ? prev : nextAdminId));
+    setUsers((prev) => {
+      if (prev.length === data.users.length) {
+        let same = true;
+        for (let i = 0; i < prev.length; i++) {
+          if (
+            prev[i].sessionId !== data.users[i].sessionId ||
+            prev[i].role !== data.users[i].role ||
+            prev[i].userNumber !== data.users[i].userNumber
+          ) {
+            same = false;
+            break;
+          }
+        }
+        if (same) return prev;
+      }
+      return data.users;
+    });
   }, []);
 
   const syncWithServer = useCallback(async () => {
@@ -150,6 +167,8 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
             const data = JSON.parse(event.data);
             if (data.type === 'session:state') {
               applyServerState(data);
+            } else if (data.type === 'admin:config_updated' || data.type === 'admin:orders_updated' || data.type === 'pdfs:updated') {
+              window.dispatchEvent(new CustomEvent('growth-viral-ws-event', { detail: data }));
             }
           } catch {
             // Ignore parse errors
@@ -158,7 +177,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
         ws.onclose = () => {
           if (!isUnloading) {
-            reconnectTimer = setTimeout(connectWs, 2500);
+            reconnectTimer = setTimeout(connectWs, 3500);
           }
         };
       } catch {
@@ -168,7 +187,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     connectWs();
 
-    // Heartbeat interval every 4 seconds
+    // Heartbeat interval every 7 seconds
     const heartbeatInterval = setInterval(() => {
       if (isUnloading) return;
       if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
@@ -180,7 +199,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
         }
       }
       syncWithServer();
-    }, 4000);
+    }, 7000);
 
     // Automatic session close on page close / reload / tab close
     const handlePageClose = () => {
@@ -365,22 +384,37 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const isAdminOccupiedByOther = Boolean(activeAdminSessionId && activeAdminSessionId !== sessionId);
   const activeAdminUser = users.find((u) => u.sessionId === activeAdminSessionId);
   const activeAdminUserNumber = activeAdminUser?.userNumber ?? null;
+  const totalUsers = Math.max(1, users.length);
+
+  const contextValue = useMemo<SessionContextValue>(
+    () => ({
+      sessionId,
+      myUserNumber,
+      isAdmin,
+      isAdminOccupiedByOther,
+      activeAdminSessionId,
+      activeAdminUserNumber,
+      totalUsers,
+      users,
+      loginAdmin,
+      logoutAdmin,
+    }),
+    [
+      sessionId,
+      myUserNumber,
+      isAdmin,
+      isAdminOccupiedByOther,
+      activeAdminSessionId,
+      activeAdminUserNumber,
+      totalUsers,
+      users,
+      loginAdmin,
+      logoutAdmin,
+    ]
+  );
 
   return (
-    <SessionContext.Provider
-      value={{
-        sessionId,
-        myUserNumber,
-        isAdmin,
-        isAdminOccupiedByOther,
-        activeAdminSessionId,
-        activeAdminUserNumber,
-        totalUsers: Math.max(1, users.length),
-        users,
-        loginAdmin,
-        logoutAdmin,
-      }}
-    >
+    <SessionContext.Provider value={contextValue}>
       {children}
     </SessionContext.Provider>
   );

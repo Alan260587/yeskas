@@ -278,7 +278,10 @@ const PLATFORMS_CONFIG: PlatformConfig[] = [
 interface YouTubeMonetizationCalculatorProps {
   onClose?: () => void;
   isModal?: boolean;
-  onAddToCart?: (service: ServiceItem, quantity?: number) => void;
+  onAddToCart?: (service: ServiceItem, quantity?: number, deliverySpeed?: DeliverySpeedMode) => void;
+  onOpenCart?: () => void;
+  cartCount?: number;
+  cartTotal?: number;
   onOpenInstructions?: () => void;
 }
 
@@ -295,10 +298,13 @@ export interface DiagnosticPackageItem {
   metric: string;
 }
 
-export const YouTubeMonetizationCalculator: React.FC<YouTubeMonetizationCalculatorProps> = ({
+export const YouTubeMonetizationCalculator: React.FC<YouTubeMonetizationCalculatorProps> = React.memo(({
   onClose,
   isModal = false,
   onAddToCart,
+  onOpenCart,
+  cartCount = 0,
+  cartTotal = 0,
   onOpenInstructions,
 }) => {
   const { getDiagnosticPrice, services, paymentConfig, recordOrder } = useCatalogConfig();
@@ -807,12 +813,13 @@ export const YouTubeMonetizationCalculator: React.FC<YouTubeMonetizationCalculat
           description: `${pkg.detail} | ⏱️ ${pkg.deliveryTime} | 🛡️ ${pkg.guarantee}`,
           deliveryTime: pkg.deliveryTime,
           guarantee: pkg.guarantee,
-          image: 'https://images.unsplash.com/photo-1611162617474-5b21e879e113?auto=format&fit=crop&w=800&q=80',
+          image: 'https://images.unsplash.com/photo-1611162617474-5b21e879e113?auto=format&fit=crop&w=480&q=75',
         },
-        qty
+        qty,
+        deliverySpeed
       );
       setAddedPackageId(pkg.id);
-      setTimeout(() => setAddedPackageId(null), 1500);
+      setTimeout(() => setAddedPackageId(null), 1000);
     }
   };
 
@@ -837,17 +844,18 @@ export const YouTubeMonetizationCalculator: React.FC<YouTubeMonetizationCalculat
           description: `${pkg.detail} | ⏱️ ${pkg.deliveryTime} | 🛡️ ${pkg.guarantee}`,
           deliveryTime: pkg.deliveryTime,
           guarantee: pkg.guarantee,
-          image: 'https://images.unsplash.com/photo-1611162617474-5b21e879e113?auto=format&fit=crop&w=800&q=80',
+          image: 'https://images.unsplash.com/photo-1611162617474-5b21e879e113?auto=format&fit=crop&w=480&q=75',
         },
-        qty
+        qty,
+        deliverySpeed
       );
     });
 
     setAddedAllBanner(true);
-    setTimeout(() => setAddedAllBanner(false), 2200);
+    setTimeout(() => setAddedAllBanner(false), 2000);
   };
 
-  const handleSinglePackageWhatsApp = (pkg: DiagnosticPackageItem) => {
+  const buildSinglePkgWaHref = (pkg: DiagnosticPackageItem) => {
     const qty = getPkgQty(pkg.id);
     const subtotal = pkg.price * qty;
     const speedLabel =
@@ -856,6 +864,16 @@ export const YouTubeMonetizationCalculator: React.FC<YouTubeMonetizationCalculat
         : 'Modo Progresivo (7 días en adelante)';
 
     const text = `🔥 ¡Hola! Vengo del Centro de Diagnóstico de ${activePlatform.name} y me interesa adquirir este paquete:\n\n📌 *Paquete:* ${pkg.name}${qty > 1 ? ` (x${qty})` : ''} ➜ *$${subtotal} USD*\n📝 *Detalle:* ${pkg.detail}\n⏱️ *Tiempo de Entrega:* ${pkg.deliveryTime}\n🛡️ *Garantía:* ${pkg.guarantee}\n🚀 *Ritmo Solicitado:* ${speedLabel}\n🔗 *Mi enlace:* ${currentUrl.trim() || 'Te lo facilito por aquí en el chat'}\n\n¿Me confirmas disponibilidad y tasa para coordinar por Binance (ID: ${paymentConfig.binancePayId}) o Pago Móvil (${paymentConfig.pagoMovil.bankCode})? ¡Gracias!`;
+    return buildWhatsAppLink(text, paymentConfig.whatsappPhone);
+  };
+
+  const handleRecordSinglePackageOrder = (pkg: DiagnosticPackageItem) => {
+    const qty = getPkgQty(pkg.id);
+    const subtotal = pkg.price * qty;
+    const speedLabel =
+      deliverySpeed === 'express'
+        ? 'Modo Express (48 a 72 horas)'
+        : 'Modo Progresivo (7 días en adelante)';
 
     recordOrder({
       source: 'plan_monetizacion',
@@ -874,19 +892,16 @@ export const YouTubeMonetizationCalculator: React.FC<YouTubeMonetizationCalculat
       ],
       totalUSD: subtotal,
     });
-
-    const link = buildWhatsAppLink(text, paymentConfig.whatsappPhone);
-    window.open(link, '_blank');
   };
 
-  const handleSendToWhatsApp = () => {
+  const planWhatsAppHref = useMemo(() => {
     const pkgsToUse =
       planDiagnostic.selectedPackages.length > 0
         ? planDiagnostic.selectedPackages
         : planDiagnostic.packages;
 
     const totalEstimate = pkgsToUse.reduce(
-      (sum, p) => sum + p.price * getPkgQty(p.id),
+      (sum, p) => sum + p.price * (packageQuantities[p.id] || 1),
       0
     );
 
@@ -901,12 +916,33 @@ export const YouTubeMonetizationCalculator: React.FC<YouTubeMonetizationCalculat
         detail: p.detail,
         deliveryTime: p.deliveryTime,
         guarantee: p.guarantee,
-        quantity: getPkgQty(p.id),
+        quantity: packageQuantities[p.id] || 1,
       })),
       deliverySpeed,
       totalEstimate,
       paymentConfig,
     });
+
+    return buildWhatsAppLink(message, paymentConfig.whatsappPhone);
+  }, [
+    planDiagnostic,
+    packageQuantities,
+    activePlatform,
+    currentUrl,
+    deliverySpeed,
+    paymentConfig,
+  ]);
+
+  const handleRecordPlanOrder = () => {
+    const pkgsToUse =
+      planDiagnostic.selectedPackages.length > 0
+        ? planDiagnostic.selectedPackages
+        : planDiagnostic.packages;
+
+    const totalEstimate = pkgsToUse.reduce(
+      (sum, p) => sum + p.price * getPkgQty(p.id),
+      0
+    );
 
     recordOrder({
       source: 'plan_monetizacion',
@@ -926,16 +962,10 @@ export const YouTubeMonetizationCalculator: React.FC<YouTubeMonetizationCalculat
       })),
       totalUSD: totalEstimate,
     });
-
-    const link = buildWhatsAppLink(message, paymentConfig.whatsappPhone);
-    window.open(link, '_blank');
   };
 
   return (
-    <div className="bg-gradient-to-br from-zinc-950 via-zinc-900 to-zinc-950 border border-zinc-800 rounded-3xl p-6 sm:p-10 text-white shadow-2xl relative overflow-hidden">
-      {/* Background Ambient Glow */}
-      <div className="absolute top-0 right-0 w-96 h-96 bg-purple-600/10 rounded-full blur-3xl pointer-events-none" />
-      <div className="absolute bottom-0 left-0 w-80 h-80 bg-red-600/10 rounded-full blur-3xl pointer-events-none" />
+    <div className="bg-zinc-900/90 border border-zinc-800 rounded-3xl p-5 sm:p-8 text-white shadow-xl relative overflow-hidden">
 
       {/* Main Section Header */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-8 pb-6 border-b border-zinc-800 relative z-10">
@@ -1437,16 +1467,18 @@ export const YouTubeMonetizationCalculator: React.FC<YouTubeMonetizationCalculat
                           </button>
                         ) : null}
 
-                        <button
-                          type="button"
-                          onClick={() => handleSinglePackageWhatsApp(pkg)}
+                        <a
+                          href={buildSinglePkgWaHref(pkg)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={() => handleRecordSinglePackageOrder(pkg)}
                           className={`py-2 px-2.5 rounded-xl text-xs font-bold bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 text-emerald-300 hover:text-white transition flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer ${
                             !onAddToCart ? 'col-span-2' : ''
                           }`}
                         >
                           <MessageCircle className="w-3.5 h-3.5 text-emerald-400" />
                           <span>Pedir por WhatsApp</span>
-                        </button>
+                        </a>
                       </div>
                     </div>
                   );
@@ -1456,32 +1488,46 @@ export const YouTubeMonetizationCalculator: React.FC<YouTubeMonetizationCalculat
 
             {/* Base C: Add All Selected Packages to Multi-Order Cart Button */}
             {onAddToCart && planDiagnostic.packages.length > 0 && (
-              <div className="mt-3">
+              <div className="mt-3 space-y-2">
                 <button
                   type="button"
                   onClick={handleAddAllSelectedToCart}
                   className={`w-full py-3 px-4 rounded-2xl text-xs sm:text-sm font-black transition flex items-center justify-center gap-2 cursor-pointer shadow-lg ${
                     addedAllBanner
                       ? 'bg-purple-600 text-white'
-                      : 'bg-purple-600/20 hover:bg-purple-600/30 text-purple-200 border border-purple-500/50'
+                      : 'bg-purple-600/25 hover:bg-purple-600/35 text-purple-100 border border-purple-500/50'
                   }`}
                 >
                   {addedAllBanner ? (
                     <>
                       <CheckCircle2 className="w-4 h-4 text-white" />
                       <span>
-                        ¡Se añadieron {planDiagnostic.selectedPackages.length || planDiagnostic.packages.length} paquetes a tu Pedido Conjunto!
+                        ¡Se añadieron {planDiagnostic.selectedPackages.length || planDiagnostic.packages.length} paquetes a tu Carrito!
                       </span>
                     </>
                   ) : (
                     <>
                       <ShoppingBag className="w-4 h-4 text-purple-400" />
                       <span>
-                        Añadir los {planDiagnostic.selectedPackages.length || planDiagnostic.packages.length} Paquetes Seleccionados a mi Pedido (${planDiagnostic.total} USD)
+                        Agregar los {planDiagnostic.selectedPackages.length || planDiagnostic.packages.length} Paquetes Seleccionados al Carrito (${planDiagnostic.total} USD)
                       </span>
                     </>
                   )}
                 </button>
+
+                {cartCount > 0 && onOpenCart && (
+                  <button
+                    type="button"
+                    onClick={onOpenCart}
+                    className="w-full py-2.5 px-4 rounded-2xl text-xs font-black bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white flex items-center justify-center gap-2 shadow cursor-pointer"
+                  >
+                    <ShoppingBag className="w-4 h-4" />
+                    <span>
+                      Ver mi Carrito ({cartCount} paq. • ${cartTotal} USD) para Mandar a WhatsApp
+                    </span>
+                    <ArrowRight className="w-4 h-4" />
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -1491,7 +1537,7 @@ export const YouTubeMonetizationCalculator: React.FC<YouTubeMonetizationCalculat
             <div className="flex items-center justify-between">
               <div>
                 <span className="text-xs text-zinc-400 block font-semibold">
-                  Total en Paquetes Seleccionados:
+                  Total en Paquetes Seleccionados ({planDiagnostic.selectedPackages.length || planDiagnostic.packages.length}):
                 </span>
                 <span className="text-[11px] text-emerald-400">
                   Pago Móvil ({paymentConfig.pagoMovil.bankCode}) / Binance Pay ID {paymentConfig.binancePayId}
@@ -1506,14 +1552,19 @@ export const YouTubeMonetizationCalculator: React.FC<YouTubeMonetizationCalculat
 
           {/* Ponerse de acuerdo por WhatsApp Button */}
           <div className="space-y-2">
-            <button
-              onClick={handleSendToWhatsApp}
+            <a
+              href={planWhatsAppHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={handleRecordPlanOrder}
               className="w-full flex items-center justify-center gap-2.5 px-6 py-4 rounded-2xl font-black text-sm sm:text-base bg-emerald-600 hover:bg-emerald-500 text-white shadow-xl shadow-emerald-950/60 transition active:scale-95 cursor-pointer"
             >
               <MessageCircle className="w-5 h-5 fill-white" />
-              <span>Ponerse de Acuerdo por WhatsApp ({paymentConfig.whatsappDisplay})</span>
+              <span>
+                Mandar {planDiagnostic.selectedPackages.length || planDiagnostic.packages.length} Paquetes a WhatsApp (${planDiagnostic.total} USD)
+              </span>
               <ArrowRight className="w-4 h-4 ml-1" />
-            </button>
+            </a>
             <p className="text-[11px] text-zinc-400 text-center leading-relaxed">
               Al tocar aquí se abrirá WhatsApp con el enlace de {activePlatform.name}, el ritmo{' '}
               {deliverySpeed === 'express'
@@ -1530,8 +1581,7 @@ export const YouTubeMonetizationCalculator: React.FC<YouTubeMonetizationCalculat
         platform={selectedPlatform}
         packageInvestmentUSD={planDiagnostic.total}
         channelOrAccountUrl={currentUrl}
-        onConsultPlan={handleSendToWhatsApp}
       />
     </div>
   );
-};
+});

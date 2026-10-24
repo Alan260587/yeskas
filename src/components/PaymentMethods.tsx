@@ -3,7 +3,7 @@ import { CreditCard, Globe2, ShieldCheck, MessageCircle, Wallet, Copy, Check, In
 import { buildWhatsAppLink } from '../data/catalogData';
 import { useCatalogConfig } from '../context/CatalogConfigContext';
 
-export const PaymentMethods: React.FC = () => {
+export const PaymentMethods: React.FC = React.memo(() => {
   const { paymentConfig } = useCatalogConfig();
   const [copiedBinance, setCopiedBinance] = useState(false);
   const [copiedPagoMovil, setCopiedPagoMovil] = useState(false);
@@ -261,4 +261,4 @@ export const PaymentMethods: React.FC = () => {
       </div>
     </section>
   );
-};
+});

@@ -186,7 +186,7 @@ export const CatalogConfigProvider: React.FC<{ children: React.ReactNode }> = ({
     [applyServerConfig]
   );
 
-  // Initial fetch & WebSocket listener
+  // Initial fetch & WebSocket event listener (shared with SessionContext)
   useEffect(() => {
     const fetchInitial = async () => {
       try {
@@ -202,31 +202,19 @@ export const CatalogConfigProvider: React.FC<{ children: React.ReactNode }> = ({
     };
     fetchInitial();
 
-    // Listen on WebSocket for live admin updates
-    let ws: WebSocket | null = null;
-    try {
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      ws = new WebSocket(`${protocol}//${window.location.host}/ws-session`);
-      ws.onmessage = (event) => {
-        try {
-          const msg = JSON.parse(event.data);
-          if (msg.type === 'admin:config_updated' && msg.config) {
-            applyServerConfig(msg.config);
-          } else if (msg.type === 'admin:orders_updated' && Array.isArray(msg.orders)) {
-            applyServerOrders(msg.orders);
-          }
-        } catch {
-          // ignore
-        }
-      };
-    } catch {
-      // ignore
-    }
-
-    return () => {
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.close();
+    const handleWsEvent = (e: Event) => {
+      const msg = (e as CustomEvent).detail;
+      if (!msg) return;
+      if (msg.type === 'admin:config_updated' && msg.config) {
+        applyServerConfig(msg.config);
+      } else if (msg.type === 'admin:orders_updated' && Array.isArray(msg.orders)) {
+        applyServerOrders(msg.orders);
       }
+    };
+
+    window.addEventListener('growth-viral-ws-event', handleWsEvent);
+    return () => {
+      window.removeEventListener('growth-viral-ws-event', handleWsEvent);
     };
   }, [applyServerConfig, applyServerOrders]);
 
@@ -535,21 +523,21 @@ export const CatalogConfigProvider: React.FC<{ children: React.ReactNode }> = ({
         return next;
       });
 
-      try {
-        const res = await fetch('/api/orders', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(newOrder),
-        });
-        if (res.ok) {
-          const data = await res.json();
-          if (Array.isArray(data.orders)) {
+      // Fire-and-forget server sync so UI never waits
+      fetch('/api/orders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newOrder),
+      })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (data && Array.isArray(data.orders)) {
             applyServerOrders(data.orders);
           }
-        }
-      } catch {
-        // Stored locally if offline
-      }
+        })
+        .catch(() => {
+          // Stored locally if offline
+        });
 
       return newOrder;
     },
@@ -626,32 +614,57 @@ export const CatalogConfigProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   }, []);
 
+  const contextValue = useMemo<CatalogConfigContextValue>(
+    () => ({
+      services,
+      allServicesAdmin,
+      specialOffers,
+      diagnosticPrices,
+      getDiagnosticPrice,
+      paymentConfig: adminState.paymentConfig,
+      orders,
+      updateServicePrice,
+      updateServiceDetails,
+      toggleServiceHidden,
+      createCustomService,
+      deleteCustomService,
+      updateSpecialOfferPrice,
+      updateDiagnosticPrice,
+      saveBulkPrices,
+      updatePaymentConfig,
+      resetAllToDefaults,
+      recordOrder,
+      updateOrderStatus,
+      deleteOrder,
+      clearOrders,
+    }),
+    [
+      services,
+      allServicesAdmin,
+      specialOffers,
+      diagnosticPrices,
+      getDiagnosticPrice,
+      adminState.paymentConfig,
+      orders,
+      updateServicePrice,
+      updateServiceDetails,
+      toggleServiceHidden,
+      createCustomService,
+      deleteCustomService,
+      updateSpecialOfferPrice,
+      updateDiagnosticPrice,
+      saveBulkPrices,
+      updatePaymentConfig,
+      resetAllToDefaults,
+      recordOrder,
+      updateOrderStatus,
+      deleteOrder,
+      clearOrders,
+    ]
+  );
+
   return (
-    <CatalogConfigContext.Provider
-      value={{
-        services,
-        allServicesAdmin,
-        specialOffers,
-        diagnosticPrices,
-        getDiagnosticPrice,
-        paymentConfig: adminState.paymentConfig,
-        orders,
-        updateServicePrice,
-        updateServiceDetails,
-        toggleServiceHidden,
-        createCustomService,
-        deleteCustomService,
-        updateSpecialOfferPrice,
-        updateDiagnosticPrice,
-        saveBulkPrices,
-        updatePaymentConfig,
-        resetAllToDefaults,
-        recordOrder,
-        updateOrderStatus,
-        deleteOrder,
-        clearOrders,
-      }}
-    >
+    <CatalogConfigContext.Provider value={contextValue}>
       {children}
     </CatalogConfigContext.Provider>
   );

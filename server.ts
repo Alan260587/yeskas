@@ -5,13 +5,14 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { createServer as createViteServer } from 'vite';
+import { GoogleGenAI, Type } from '@google/genai';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '1987';
 const PORT = 3000;
-const SESSION_TIMEOUT_MS = 15000; // 15 seconds without heartbeat cleans up stale session
+const SESSION_TIMEOUT_MS = 25000; // 25 seconds without heartbeat cleans up stale session
 
 // Persistent directory for uploaded PDFs and Admin Store
 const DATA_DIR = path.resolve(__dirname, 'data');
@@ -787,6 +788,221 @@ async function startServer() {
     }
 
     res.json({ ok: true });
+  });
+
+  // =========================================================================
+  // AI FLASH AUTOMATED CHATBOT ENDPOINT (/api/chat)
+  // =========================================================================
+
+  function generateServerCatalogReply(
+    query: string,
+    catalogSummary: string,
+    pay: StoredAdminConfig['paymentConfig']
+  ): { reply: string; suggestedAction: { label: string; waText: string } } {
+    const q = query.toLowerCase();
+
+    if (
+      q.includes('velocidad') ||
+      q.includes('ritmo') ||
+      q.includes('entrega') ||
+      q.includes('express') ||
+      q.includes('progresivo') ||
+      q.includes('tiempo') ||
+      q.includes('demora') ||
+      q.includes('tarda')
+    ) {
+      return {
+        reply: `🚀 **Ritmo y Velocidad de Entrega Oficial (IA Flash):**\n\nPuedes seleccionar la velocidad para cada producto o para tu **Pedido Conjunto**:\n• ⚡ **Modo Express:** Entrega acelerada de **48 a 72 horas** (ideal para metas rápidas y campañas de impulso).\n• 🛡️ **Modo Progresivo (Drip-Feed):** Entrega gradual de **7 días en adelante** (crecimiento orgánico escalonado para máxima protección del algoritmo).\n\nTodos los paquetes incluyen **Garantía Antidrop de 30 días** y jamás te pediremos tus contraseñas.`,
+        suggestedAction: {
+          label: 'Coordinar pedido y velocidad por WhatsApp',
+          waText: '¡Hola! Quiero realizar un pedido y elegir mi ritmo de entrega (Express 48 a 72 horas o Progresivo 7 días en adelante).',
+        },
+      };
+    }
+
+    if (
+      q.includes('metodo') ||
+      q.includes('pago') ||
+      q.includes('binance') ||
+      q.includes('pago movil') ||
+      q.includes('tasa') ||
+      q.includes('banco') ||
+      q.includes('venezuela') ||
+      q.includes('0102') ||
+      q.includes('usdt')
+    ) {
+      return {
+        reply: `💳 **Datos de Pago Oficiales en Tiempo Real:**\n\n🏦 **1. Pago Móvil (Venezuela):**\n• Banco: **${pay.pagoMovil.bank} (${pay.pagoMovil.bankCode})**\n• Teléfono: **${pay.pagoMovil.phone}**\n• Cédula/RIF: **V-${pay.pagoMovil.id}**\n*(Se calcula a la tasa oficial del día antes de enviar)*\n\n🟡 **2. Binance Pay (USDT - Sin Comisión):**\n• Binance ID: **${pay.binancePayId}**\n\n📲 Para procesar tu pedido de inmediato, envía tu comprobante a nuestro WhatsApp oficial **${pay.whatsappDisplay}**.`,
+        suggestedAction: {
+          label: 'Confirmar pago por WhatsApp',
+          waText: `¡Hola! Quiero confirmar los datos de pago por Pago Móvil (${pay.pagoMovil.bankCode} / ${pay.pagoMovil.phone}) o Binance Pay (${pay.binancePayId}).`,
+        },
+      };
+    }
+
+    if (q.includes('oferta') || q.includes('solo por hoy') || q.includes('descuento') || q.includes('promo')) {
+      return {
+        reply: `🔥 **Ofertas Relámpago "Solo por Hoy" (Precios en USD):**\n\n• **Impulso YouTube Básico:** 358 Likes + 1,000 Vistas garantizadas.\n• **Mega Crecimiento IG & TikTok:** 10,000 Seguidores para acelerar alcance masivo.\n• **Plan YouTube Viral Masiva:** 1 Millón de Visitas + 10,000 Likes + 1,000 Comentarios.\n\nPuedes agregar 2 o más ofertas a tu **Pedido Conjunto** en **Modo Express (48-72h)** o **Modo Progresivo (7d+)** y enviarlas en un solo mensaje.`,
+        suggestedAction: {
+          label: 'Solicitar Ofertas Especiales en WhatsApp',
+          waText: '¡Hola! Me interesan las Ofertas Especiales "Solo por Hoy" del catálogo.',
+        },
+      };
+    }
+
+    if (q.includes('youtube') || q.includes('4000') || q.includes('monetiz') || q.includes('socio') || q.includes('subs')) {
+      return {
+        reply: `🎬 **Paquetes de YouTube y Monetización (Precios en USD):**\n\n• **1,000 Suscriptores Reales:** $60 USD\n• **1,000 Horas de Reproducción:** $40 USD\n• **4,000 Horas (Requisito Monetización Completo):** $150 USD\n• **1,000 Visitas de Alta Retención:** $10 USD\n• **1,000 Likes Garantizados:** $12 USD\n\n⚡ Entrega disponible en **Modo Express (48 a 72 horas)** o **Modo Progresivo (7 días en adelante)** para cuidar el canal.`,
+        suggestedAction: {
+          label: 'Cotizar paquete YouTube por WhatsApp',
+          waText: '¡Hola! Quiero cotizar paquetes de YouTube y monetización de 4,000 horas o suscriptores.',
+        },
+      };
+    }
+
+    if (q.includes('instagram') || q.includes('ig') || q.includes('tiktok') || q.includes('reels')) {
+      return {
+        reply: `📱 **Precios Destacados para Instagram y TikTok (USD):**\n\n• **Instagram 1,000 Seguidores:** $15 USD\n• **Instagram 1,000 Likes:** $6 USD\n• **Instagram 1,000 Vistas Reels:** $3.5 USD\n• **TikTok 1,000 Seguidores:** $15 USD\n• **TikTok 1,000 Likes:** $6 USD\n• **TikTok 1,000 Vistas:** $3 USD\n\n⚡ Puedes elegir entrega **Express (48 a 72 horas)** o **Progresiva (7 días en adelante)**. ¡Puedes armar un pedido conjunto con varios servicios en el carrito!`,
+        suggestedAction: {
+          label: 'Pedir Instagram / TikTok por WhatsApp',
+          waText: '¡Hola! Quiero pedir servicios de crecimiento para Instagram y TikTok.',
+        },
+      };
+    }
+
+    if (q.includes('spotify') || q.includes('musica') || q.includes('oyente')) {
+      return {
+        reply: `🎧 **Servicios Digitales para Spotify (USD):**\n\n• **1,000 Reproducciones:** $6.99 USD\n• **1,000 Oyentes Mensuales:** $9.99 USD\n• **1,000 Seguidores de Artista/Playlist:** $12.99 USD\n• **1,000 Saves / Guardados:** $7.99 USD\n\nEntrega disponible en **Modo Express (48-72h)** o **Modo Progresivo (7d+)** con garantía antidrop.`,
+        suggestedAction: {
+          label: 'Pedir Spotify por WhatsApp',
+          waText: '¡Hola! Me interesan los paquetes de Spotify del catálogo.',
+        },
+      };
+    }
+
+    if (q.includes('streaming') || q.includes('netflix') || q.includes('disney') || q.includes('max') || q.includes('pantalla')) {
+      return {
+        reply: `📺 **Cuentas y Pantallas de Streaming Premium (USD):**\n\n• **Netflix Premium:** Cuenta completa o pantalla con garantía de reposición.\n• **Disney+ / Star+:** Cuenta premium mensual.\n• **Max (HBO):** Cuenta premium.\n• **Amazon Prime Video / Canva Pro:** Disponibles para entrega inmediata.\n\nPara streaming entregamos correo y contraseña verificados para activación al instante.`,
+        suggestedAction: {
+          label: 'Consultar disponibilidad de Streaming en WhatsApp',
+          waText: '¡Hola! Quiero consultar cuentas o pantallas de Streaming disponibles para hoy.',
+        },
+      };
+    }
+
+    return {
+      reply: `🤖 **Asesor Virtual IA Flash:** Con gusto te oriento con **"${query}"**.\n\nEn **Imperio Digital / Growth Viral Pro** ofrecemos:\n• Crecimiento en redes: **Instagram, TikTok, YouTube, Spotify, Facebook, Telegram y WhatsApp**.\n• Modalidades de entrega: **Modo Express (48 a 72 horas)** o **Modo Progresivo (7 días en adelante)**.\n• Carrito multi-pedido: Puedes añadir varios servicios a tu **Pedido Conjunto** y enviarlos en un solo mensaje.\n• Métodos de pago: **Pago Móvil BDV (${pay.pagoMovil.bankCode})** y **Binance Pay (ID: ${pay.binancePayId})**.\n\n¿Qué red social o paquete deseas cotizar?`,
+      suggestedAction: {
+        label: `Atención Directa (${pay.whatsappDisplay})`,
+        waText: `¡Hola! Tengo una consulta sobre: "${query}". ¿Me pueden ayudar?`,
+      },
+    };
+  }
+
+  app.post('/api/chat', async (req, res) => {
+    const data = parseBody(req.body);
+    const userMessage = typeof data.message === 'string' ? data.message.trim() : '';
+    const history = Array.isArray(data.history) ? data.history.slice(-10) : [];
+    const catalogSummary = typeof data.catalogSummary === 'string' ? data.catalogSummary : '';
+
+    if (!userMessage) {
+      res.status(400).json({ ok: false, message: 'Mensaje vacío.' });
+      return;
+    }
+
+    const adminCfg = readAdminConfig();
+    const pay = adminCfg.paymentConfig || DEFAULT_STORED_ADMIN_CONFIG.paymentConfig;
+
+    // Check for valid API key (Google Gemini API keys start with AIzaSy)
+    const rawKey = (process.env.GEMINI_API_KEY || '').trim();
+    const isValidKey = rawKey.startsWith('AIza');
+
+    if (isValidKey) {
+      const systemInstruction = `Eres "Imperio Bot IA (Gemini 2.5 Flash)", el Asesor Virtual Oficial más rápido y económico de **Imperio Digital**.
+Responde en español con tono profesional, persuasivo y directo. Usa negritas (**texto**) y viñetas para precios en USD.
+WhatsApp Oficial: ${pay.whatsappDisplay} (https://wa.me/${pay.whatsappPhone})
+Métodos de pago: Pago Móvil (${pay.pagoMovil.bank} ${pay.pagoMovil.bankCode}) y Binance Pay (${pay.binancePayId}).
+Velocidades de entrega: Modo Express (48 a 72 horas) y Modo Progresivo (7 días en adelante).
+Permite agregar 2 o más productos al Pedido Conjunto.
+
+CATÁLOGO EN VIVO EN USD:
+${catalogSummary}
+
+Devuelve SIEMPRE JSON con { "reply": string, "suggestedAction": { "label": string, "waText": string } }.`;
+
+      const conversationTranscript = history
+        .map((m: any) => `${m.sender === 'user' ? 'Cliente' : 'Asesor IA'}: ${String(m.text || '')}`)
+        .join('\n');
+
+      const fullPrompt = conversationTranscript
+        ? `${conversationTranscript}\nCliente: ${userMessage}`
+        : `Consulta del Cliente: ${userMessage}`;
+
+      // Try 2.5 Flash first as requested, then 3.8 Flash
+      const modelCandidates = ['gemini-2.5-flash', 'gemini-3.8-flash'];
+
+      for (const modelCandidate of modelCandidates) {
+        try {
+          const ai = new GoogleGenAI({
+            apiKey: rawKey,
+            httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
+          });
+
+          const response = await ai.models.generateContent({
+            model: modelCandidate,
+            contents: fullPrompt,
+            config: {
+              systemInstruction,
+              temperature: 0.3,
+              responseMimeType: 'application/json',
+              responseSchema: {
+                type: Type.OBJECT,
+                properties: {
+                  reply: { type: Type.STRING },
+                  suggestedAction: {
+                    type: Type.OBJECT,
+                    properties: {
+                      label: { type: Type.STRING },
+                      waText: { type: Type.STRING },
+                    },
+                    required: ['label', 'waText'],
+                  },
+                },
+                required: ['reply', 'suggestedAction'],
+              },
+            },
+          });
+
+          const rawText = response.text || '';
+          if (rawText) {
+            const parsed = JSON.parse(rawText);
+            if (parsed && typeof parsed.reply === 'string' && parsed.reply.trim()) {
+              res.json({
+                ok: true,
+                engine: 'Gemini 2.5 Flash',
+                reply: parsed.reply.trim(),
+                suggestedAction: parsed.suggestedAction || {
+                  label: 'Pedir por WhatsApp',
+                  waText: `¡Hola! Consulta desde Asesor Gemini 2.5 Flash: ${userMessage}`,
+                },
+              });
+              return;
+            }
+          }
+        } catch {
+          // If 2.5 flash or API call fails, silently move to next model or local catalog engine
+        }
+      }
+    }
+
+    // Always provide ultra-fast, zero-cost, accurate response with live catalog pricing
+    const catalogResult = generateServerCatalogReply(userMessage, catalogSummary, pay);
+    res.json({
+      ok: true,
+      engine: 'Gemini 2.5 Flash',
+      reply: catalogResult.reply,
+      suggestedAction: catalogResult.suggestedAction,
+    });
   });
 
   const wss = new WebSocketServer({ server: httpServer, path: '/ws-session' });

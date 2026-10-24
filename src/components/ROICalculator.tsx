@@ -177,11 +177,10 @@ interface ROICalculatorProps {
   onConsultPlan?: () => void;
 }
 
-export const ROICalculator: React.FC<ROICalculatorProps> = ({
+export const ROICalculator: React.FC<ROICalculatorProps> = React.memo(({
   platform,
   packageInvestmentUSD,
   channelOrAccountUrl = '',
-  onConsultPlan,
 }) => {
   const { paymentConfig } = useCatalogConfig();
   const [isOpen, setIsOpen] = useState(true);
@@ -241,7 +240,7 @@ export const ROICalculator: React.FC<ROICalculatorProps> = ({
     };
   }, [platform, metricValue, activeNiche, packageInvestmentUSD, selectedNicheId]);
 
-  const handleShareOnWhatsApp = () => {
+  const shareWhatsAppUrl = useMemo(() => {
     const text = `📊 *PROYECCIÓN DE GANANCIAS Y RETORNO DE INVERSIÓN (ROI)*\n` +
       `Plataforma: *${config.platformName}* ${config.platformIcon}\n` +
       `Cuenta/Enlace: ${channelOrAccountUrl.trim() || 'Por acordar en chat'}\n` +
@@ -256,16 +255,13 @@ export const ROICalculator: React.FC<ROICalculatorProps> = ({
       `─────────────────────────\n` +
       `🤝 Quiero adquirir el paquete de $${packageInvestmentUSD} USD para comenzar a monetizar cuanto antes. ¿Coordinamos por Binance ID (${paymentConfig.binancePayId}) o Pago Móvil (${paymentConfig.pagoMovil.bankCode})?`;
 
-    const url = buildWhatsAppLink(text, paymentConfig.whatsappPhone);
-    window.open(url, '_blank');
-  };
+    return buildWhatsAppLink(text, paymentConfig.whatsappPhone);
+  }, [config, channelOrAccountUrl, activeNiche, metricValue, calculations, packageInvestmentUSD, paymentConfig]);
 
   return (
     <div className="mt-8 pt-8 border-t border-zinc-800/80">
       {/* Top Banner / Accordion Header */}
       <div className="bg-gradient-to-r from-emerald-950/40 via-zinc-900 to-emerald-950/20 border border-emerald-500/30 rounded-3xl p-5 sm:p-6 shadow-xl relative overflow-hidden">
-        {/* Glow accent */}
-        <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
 
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-start gap-3.5">
@@ -499,15 +495,16 @@ export const ROICalculator: React.FC<ROICalculatorProps> = ({
                   </div>
 
                   {/* WhatsApp Action Button */}
-                  <button
-                    type="button"
-                    onClick={handleShareOnWhatsApp}
+                  <a
+                    href={shareWhatsAppUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
                     className="w-full mt-4 flex items-center justify-center gap-2 py-3 px-4 rounded-xl font-black text-xs sm:text-sm bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-500 hover:to-green-500 text-white shadow-lg shadow-emerald-950/70 transition active:scale-95 cursor-pointer"
                   >
                     <MessageCircle className="w-4 h-4 fill-white" />
                     <span>Compartir Proyección en WhatsApp</span>
                     <ArrowRight className="w-3.5 h-3.5 ml-1" />
-                  </button>
+                  </a>
 
                   <p className="text-[10px] text-zinc-400 text-center mt-2">
                     Te abre WhatsApp con el cálculo exacto de retorno para cerrar el paquete con el soporte.
@@ -522,4 +519,4 @@ export const ROICalculator: React.FC<ROICalculatorProps> = ({
       </div>
     </div>
   );
-};
+});

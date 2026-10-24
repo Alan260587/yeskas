@@ -60,6 +60,7 @@ export interface CartItem {
   metric: string;
   unitPrice: number;
   quantity: number; // multiplier, e.g. 1 means 1 unit (1K), 2 means 2 units (2K)
+  deliverySpeed?: DeliverySpeedMode;
 }
 
 export interface OrderDetails {

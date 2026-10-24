@@ -11,7 +11,7 @@ interface HeroProps {
   onOpenUploadPdfs?: () => void;
 }
 
-export const Hero: React.FC<HeroProps> = ({
+export const Hero: React.FC<HeroProps> = React.memo(({
   onOpenCalculator,
   onOpenCart,
   onSelectCategory,
@@ -25,17 +25,12 @@ export const Hero: React.FC<HeroProps> = ({
   );
 
   return (
-    <section className="relative overflow-hidden pt-8 pb-12 sm:pt-12 sm:pb-16 bg-gradient-to-b from-zinc-950 via-zinc-900 to-zinc-950 text-white border-b border-zinc-800/80">
-      {/* Background Glows */}
-      <div className="absolute top-0 left-1/4 w-96 h-96 bg-purple-600/15 rounded-full blur-3xl pointer-events-none" />
-      <div className="absolute top-1/3 right-10 w-80 h-80 bg-rose-600/10 rounded-full blur-3xl pointer-events-none" />
-      <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-[600px] h-32 bg-cyan-600/10 rounded-full blur-3xl pointer-events-none" />
-
+    <section className="relative overflow-hidden pt-8 pb-10 sm:pt-10 sm:pb-12 bg-gradient-to-b from-zinc-950 via-zinc-900 to-zinc-950 text-white border-b border-zinc-800/80">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
         <div className="text-center max-w-3xl mx-auto">
           {/* Badge */}
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-zinc-800/80 border border-zinc-700/80 text-zinc-300 text-xs sm:text-sm font-medium mb-5 shadow-sm">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-zinc-800/90 border border-zinc-700 text-zinc-300 text-xs sm:text-sm font-medium mb-5">
+            <span className="w-2 h-2 rounded-full bg-emerald-400" />
             <span className="font-semibold text-emerald-400">Atención Activa</span>
             <span className="text-zinc-500">•</span>
             <span>Contacto Directo WhatsApp: {paymentConfig.whatsappDisplay}</span>
@@ -162,4 +157,4 @@ export const Hero: React.FC<HeroProps> = ({
       </div>
     </section>
   );
-};
+});

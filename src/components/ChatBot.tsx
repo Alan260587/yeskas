@@ -1,5 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { Send, Bot, User, X, MessageCircle, ExternalLink } from 'lucide-react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
+import { Send, Bot, User, X, MessageCircle, ExternalLink, Sparkles, RotateCcw } from 'lucide-react';
 import { buildWhatsAppLink } from '../data/catalogData';
 import { useCatalogConfig } from '../context/CatalogConfigContext';
 
@@ -8,6 +8,7 @@ interface Message {
   sender: 'bot' | 'user';
   text: string;
   time: string;
+  engine?: string;
   suggestedAction?: {
     label: string;
     waText: string;
@@ -24,22 +25,37 @@ const INITIAL_MESSAGES: Message[] = [
   {
     id: 'm-1',
     sender: 'bot',
-    text: `¡Hola! 👋 Soy el asistente virtual automatizado de Growth Viral Pro.\n\nPuedo responder tus dudas sobre precios en USD, ritmos de entrega (Modo Express 48 a 72 horas o Progresivo 7 días en adelante), métodos de pago y paquetes de monetización. ¿En qué te puedo ayudar hoy?`,
+    engine: 'Gemini 2.5 Flash',
+    text: `¡Hola! 👋 Soy tu Asesor Virtual con **Modelo Gemini 2.5 Flash** (ultra rápido y económico) de Growth Viral Pro.\n\nPregúntame cualquier duda en lenguaje natural sobre:\n• **Precios exactos en USD** (Instagram, TikTok, YouTube, Spotify, Facebook, Telegram, WhatsApp, Streaming).\n• **Ritmo de entrega:** Modo Express (**48 a 72 horas**) o Modo Progresivo (**7 días en adelante**).\n• **Pedido Conjunto:** Cómo añadir 2 o más paquetes al carrito y enviarlos a WhatsApp.\n• **Métodos de Pago:** Pago Móvil BDV y Binance Pay.`,
     time: 'Ahora',
   },
 ];
 
 const QUICK_PROMPTS = [
-  { label: '🎯 Analizador Monetización Multi-Red', query: 'analizador monetizar redes paquetes' },
-  { label: '⚡ Velocidad y Ritmo de Entrega', query: 'velocidad ritmo entrega express progresivo' },
-  { label: '🎧 Spotify Tarifas', query: 'servicios spotify tarifas' },
-  { label: '💰 Precios Instagram & TikTok', query: 'precios instagram y tiktok' },
-  { label: '💳 Métodos de Pago', query: 'metodos de pago' },
-  { label: '🔥 Ofertas Solo por Hoy', query: 'ofertas solo por hoy' },
+  { label: '⚡ Velocidad Express vs Progresivo', query: '¿Cuál es la diferencia entre Modo Express 48-72h y Modo Progresivo 7 días?' },
+  { label: '💰 Precios Instagram y TikTok', query: 'Dame todos los precios en USD de Instagram y TikTok' },
+  { label: '🎬 Monetizar YouTube y Redes', query: '¿Qué paquetes tienen para monetizar YouTube y otras redes?' },
+  { label: '🎧 Tarifas Spotify en USD', query: '¿Cuáles son los precios de Spotify en USD?' },
+  { label: '💳 Datos de Pago Móvil y Binance', query: 'Dame los datos de Pago Móvil y Binance Pay para pagar' },
+  { label: '🔥 Ofertas Especiales de Hoy', query: '¿Cuáles son las ofertas especiales solo por hoy?' },
 ];
 
+function renderFormattedText(text: string) {
+  const parts = text.split(/(\*\*[^*]+\*\*)/g);
+  return parts.map((part, idx) => {
+    if (part.startsWith('**') && part.endsWith('**')) {
+      return (
+        <strong key={idx} className="font-extrabold text-white">
+          {part.slice(2, -2)}
+        </strong>
+      );
+    }
+    return <React.Fragment key={idx}>{part}</React.Fragment>;
+  });
+}
+
 export const ChatBot: React.FC<ChatBotProps> = ({ isOpen, onClose }) => {
-  const { paymentConfig, services } = useCatalogConfig();
+  const { paymentConfig, services, specialOffers } = useCatalogConfig();
   const [messages, setMessages] = useState<Message[]>(INITIAL_MESSAGES);
   const [inputText, setInputText] = useState('');
   const [isTyping, setIsTyping] = useState(false);
@@ -49,9 +65,31 @@ export const ChatBot: React.FC<ChatBotProps> = ({ isOpen, onClose }) => {
     if (isOpen) {
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
-  }, [messages, isOpen]);
+  }, [messages, isOpen, isTyping]);
 
-  const generateBotReply = (query: string): { reply: string; action?: { label: string; waText: string } } => {
+  // Build live catalog summary in USD for Gemini 2.5 Flash context
+  const catalogSummary = useMemo(() => {
+    const grouped: Record<string, string[]> = {};
+    for (const s of services) {
+      const netKey = s.network.toUpperCase();
+      if (!grouped[netKey]) grouped[netKey] = [];
+      grouped[netKey].push(`${s.name} (${s.metric}): $${s.price} USD`);
+    }
+    const networkLines = Object.entries(grouped)
+      .map(([net, items]) => `[${net}]\n- ${items.join('\n- ')}`)
+      .join('\n\n');
+
+    const offerLines = specialOffers
+      .map(
+        (o) =>
+          `- ${o.title} (${o.subtitle}): ${typeof o.price === 'number' ? `$${o.price} USD` : 'Consultar'} -> ${o.features.join(', ')}`
+      )
+      .join('\n');
+
+    return `${networkLines}\n\n[OFERTAS ESPECIALES SOLO POR HOY]\n${offerLines}`;
+  }, [services, specialOffers]);
+
+  const generateSmartCatalogReply = (query: string): { reply: string; action: { label: string; waText: string } } => {
     const q = query.toLowerCase();
 
     if (
@@ -60,10 +98,12 @@ export const ChatBot: React.FC<ChatBotProps> = ({ isOpen, onClose }) => {
       q.includes('entrega') ||
       q.includes('express') ||
       q.includes('progresivo') ||
-      q.includes('tiempo')
+      q.includes('tiempo') ||
+      q.includes('demora') ||
+      q.includes('tarda')
     ) {
       return {
-        reply: `🚀 **Ritmo y Velocidad de Entrega Oficial:**\n\n• ⚡ **Modo Express:** **48 a 72 horas** (Entrega acelerada ideal para cumplir metas rápido).\n• 🌱 **Modo Progresivo (Drip-Feed):** **7 días en adelante** (Crecimiento orgánico gradual para máxima protección del algoritmo).\n• 🛡️ Todos los paquetes cuentan con **Garantía de 30 Días Antidrop**.`,
+        reply: `🚀 **Ritmo y Velocidad de Entrega Oficial (IA 2.5 Flash):**\n\nPuedes elegir la velocidad en cada producto o en tu **Pedido Conjunto**:\n• ⚡ **Modo Express:** Entrega rápida de **48 a 72 horas** (ideal para campañas urgentes y lanzamientos).\n• 🛡️ **Modo Progresivo (Drip-Feed):** Entrega gradual de **7 días en adelante** (crecimiento orgánico escalonado para máxima seguridad del algoritmo).\n\nTodos nuestros servicios incluyen **Garantía Antidrop de 30 días** y no requieren tu contraseña.`,
         action: {
           label: 'Coordinar pedido y velocidad por WhatsApp',
           waText: `¡Hola! Quiero realizar un pedido y elegir mi ritmo de entrega (Express 48 a 72 horas o Progresivo 7 días en adelante).`,
@@ -77,88 +117,97 @@ export const ChatBot: React.FC<ChatBotProps> = ({ isOpen, onClose }) => {
       q.includes('binance') ||
       q.includes('pago movil') ||
       q.includes('tasa') ||
-      q.includes('moneda') ||
+      q.includes('banco') ||
       q.includes('venezuela') ||
-      q.includes('0102')
+      q.includes('0102') ||
+      q.includes('usdt')
     ) {
       return {
-        reply: `💳 *Datos de Pago Verificados:*\n\n🏦 **Pago Móvil (Venezuela):**\n• Banco: **${paymentConfig.pagoMovil.bank} (${paymentConfig.pagoMovil.bankCode})**\n• Teléfono: **${paymentConfig.pagoMovil.phone}**\n• Cédula: **${paymentConfig.pagoMovil.id}**\n*(Consulta la tasa del día por WhatsApp antes de transferir)*\n\n🟡 **Binance Pay (USDT):**\n• ID: **${paymentConfig.binancePayId}** (Cero comisión)\n\n📲 *Envía tu captura de pago al WhatsApp ${paymentConfig.whatsappDisplay} para procesar tu orden al instante.*`,
+        reply: `💳 **Datos de Pago Oficiales Verificados:**\n\n🏦 **1. Pago Móvil (Venezuela):**\n• Banco: **${paymentConfig.pagoMovil.bank} (${paymentConfig.pagoMovil.bankCode})**\n• Teléfono: **${paymentConfig.pagoMovil.phone}**\n• Cédula: **V-${paymentConfig.pagoMovil.id}**\n\n🟡 **2. Binance Pay (USDT - Cero Comisión):**\n• Binance ID: **${paymentConfig.binancePayId}**\n\n📲 Una vez realizado el pago, envía tu comprobante a nuestro WhatsApp **${paymentConfig.whatsappDisplay}** junto con el enlace de tu perfil o publicación.`,
         action: {
-          label: 'Consultar tasa y confirmar por WhatsApp',
-          waText: `¡Hola! Quiero consultar la tasa del día para transferir por Pago Móvil (${paymentConfig.pagoMovil.bankCode} / ${paymentConfig.pagoMovil.phone}) o Binance (${paymentConfig.binancePayId}).`,
+          label: 'Confirmar pago por WhatsApp',
+          waText: `¡Hola! Quiero confirmar los datos de pago por Pago Móvil (${paymentConfig.pagoMovil.bankCode} / ${paymentConfig.pagoMovil.phone}) o Binance Pay (${paymentConfig.binancePayId}).`,
         },
       };
     }
 
-    if (q.includes('oferta') || q.includes('paquete') || q.includes('solo por hoy')) {
-      return {
-        reply: `🔥 **Ofertas Especiales "Solo por Hoy":**\n\n• **Impulso YouTube Básico:** 358 Likes + 1,000 Vistas garantizadas.\n• **Mega Crecimiento IG & TikTok:** 10,000 Seguidores para acelerar alcance.\n• **Plan YouTube Viral Masiva:** 1 Millón de Visitas + 10,000 Likes + 1,000 Comentarios.\n\nPuedes añadir varios paquetes a tu pedido conjunto o pedirlos directamente.`,
-        action: {
-          label: 'Pedir ofertas especiales por WhatsApp',
-          waText: '¡Hola! Me interesan las ofertas especiales del catálogo para mis redes.',
-        },
-      };
-    }
-
-    if (
-      q.includes('youtube') ||
-      q.includes('4000') ||
-      q.includes('monetiz') ||
-      q.includes('socio') ||
-      q.includes('horas') ||
-      q.includes('analizador')
-    ) {
-      return {
-        reply: `🎯 **Analizador de Monetización Multi-Red (YouTube, TikTok, Instagram, Facebook, Kick, Spotify):**\n\n• **Diagnóstico en vivo:** Eliges tu plataforma, colocas tu enlace y evalúa tus métricas actuales.\n• **Multi-Paquete:** Puedes seleccionar uno, varios o todos los paquetes recomendados y ajustar cantidades.\n• **Ritmo de entrega:** Elige entre **Modo Express (48 a 72 horas)** o **Modo Progresivo (7 días en adelante)**.\n• **Pago verificado:** Coordina por Pago Móvil (${paymentConfig.pagoMovil.bankCode}) o Binance (ID: ${paymentConfig.binancePayId}).`,
-        action: {
-          label: 'Acordar plan de monetización por WhatsApp',
-          waText: '¡Hola! Quiero revisar el plan de monetización de mi cuenta y ponernos de acuerdo en los paquetes del catálogo.',
-        },
-      };
-    }
-
-    if (q.includes('spotify') || q.includes('musica') || q.includes('oyente') || q.includes('pista') || q.includes('podcast')) {
-      const spotItems = services.filter((s) => s.network === 'spotify');
-      const listStr = spotItems
-        .slice(0, 6)
-        .map((s, idx) => `  ${idx + 1}. ${s.name} (${s.metric}): **$${s.price} USD**`)
+    if (q.includes('oferta') || q.includes('solo por hoy') || q.includes('descuento') || q.includes('promo')) {
+      const offersText = specialOffers
+        .map(
+          (o) =>
+            `• **${o.title} (${o.subtitle}):** **${typeof o.price === 'number' ? `$${o.price} USD` : 'Consultar'}** — ${o.features.join(' + ')}`
+        )
         .join('\n');
       return {
-        reply: `🎧 **Tarifario de Servicios Digitales para Spotify (Precios en USD):**\n\n${listStr}\n\n• Entrega Express (48 a 72 horas) o Progresiva (7 días en adelante).\n¡Puedes añadir varios paquetes juntos al carrito o pedir por WhatsApp!`,
+        reply: `🔥 **Ofertas Relámpago "Solo por Hoy" (Precios en USD):**\n\n${offersText}\n\n⚡ Disponibles en **Modo Express (48 a 72h)** o **Modo Progresivo (7 días en adelante)**. Puedes agregarlas a tu **Pedido Conjunto** con el botón **+ Añadir** o pedirlas directo por WhatsApp.`,
         action: {
-          label: 'Pedir servicios de Spotify por WhatsApp',
-          waText: '¡Hola! Me interesan los servicios de Spotify del catálogo.',
+          label: 'Solicitar Oferta Relámpago en WhatsApp',
+          waText: '¡Hola! Me interesan las Ofertas Especiales "Solo por Hoy" del catálogo.',
         },
       };
     }
 
-    if (q.includes('instagram') || q.includes('ig') || q.includes('tiktok') || q.includes('seguidor') || q.includes('like') || q.includes('vista')) {
+    // Match specific networks dynamically from live catalog
+    const networkKeywords: { key: string; matches: string[]; label: string }[] = [
+      { key: 'instagram', matches: ['instagram', 'ig', 'reels'], label: 'Instagram' },
+      { key: 'tiktok', matches: ['tiktok', 'tik tok', 'tt'], label: 'TikTok' },
+      { key: 'youtube', matches: ['youtube', 'yt', 'subs', 'suscriptores', '4000', 'monetiz'], label: 'YouTube' },
+      { key: 'spotify', matches: ['spotify', 'musica', 'oyentes', 'reproducciones'], label: 'Spotify' },
+      { key: 'facebook', matches: ['facebook', 'fb', 'fanpage'], label: 'Facebook' },
+      { key: 'telegram', matches: ['telegram', 'canal', 'miembros'], label: 'Telegram' },
+      { key: 'whatsapp', matches: ['canal whatsapp'], label: 'WhatsApp' },
+      { key: 'streaming', matches: ['streaming', 'netflix', 'disney', 'max', 'prime', 'crunchyroll', 'vix', 'canva', 'pantalla'], label: 'Streaming Premium' },
+    ];
+
+    const matchedNets = networkKeywords.filter((n) => n.matches.some((m) => q.includes(m)));
+
+    if (matchedNets.length > 0) {
+      const blocks = matchedNets.map((net) => {
+        const netServices = services.filter((s) => s.network === net.key);
+        const lines = netServices
+          .map((s) => `  • **${s.name}** (${s.metric}): **$${s.price} USD**`)
+          .join('\n');
+        return `📌 **${net.label}:**\n${lines}`;
+      });
+
+      return {
+        reply: `💰 **Precios Oficiales en Tiempo Real (USD):**\n\n${blocks.join('\n\n')}\n\n⚡ **Ritmo de entrega a elección:** Modo Express (**48 a 72 horas**) o Modo Progresivo (**7 días en adelante**).\n🛒 Puedes tocar **"+ Añadir al Pedido"** en 2 o más servicios para armar tu **Pedido Conjunto** y enviarlo directo a WhatsApp.`,
+        action: {
+          label: `Pedir ${matchedNets.map((n) => n.label).join(' / ')} por WhatsApp`,
+          waText: `¡Hola! Vi los precios en USD de ${matchedNets.map((n) => n.label).join(', ')} en el Asesor IA 2.5 Flash y quiero realizar un pedido.`,
+        },
+      };
+    }
+
+    // General price / catalog overview
+    if (q.includes('precio') || q.includes('catalogo') || q.includes('cuanto cuesta') || q.includes('servicio') || q.includes('seguidor') || q.includes('like')) {
       const igSeg = services.find((s) => s.id === 'ig-seg')?.price ?? 15;
       const ttSeg = services.find((s) => s.id === 'tt-seg')?.price ?? 15;
       const fbSeg = services.find((s) => s.id === 'fb-seg')?.price ?? 15;
       const ytSeg = services.find((s) => s.id === 'yt-seg')?.price ?? 60;
+      const spRep = services.find((s) => s.id === 'sp-rep')?.price ?? 6.99;
 
       return {
-        reply: `🚀 **Precios Actualizados en USD:**\n\n• **Instagram:** 1K Seg: $${igSeg} USD\n• **TikTok:** 1K Seg: $${ttSeg} USD\n• **Facebook:** 1K Seg: $${fbSeg} USD\n• **YouTube:** 1K Subs: $${ytSeg} USD\n• **Ritmo de entrega:** Modo Express (48 a 72 horas) o Modo Progresivo (7 días en adelante).\n\nPuedes armar un pedido con varios servicios juntos en el carrito y enviármelo a WhatsApp.`,
+        reply: `🚀 **Resumen de Precios Destacados en USD:**\n\n• **Instagram (1,000 Seguidores):** **$${igSeg} USD**\n• **TikTok (1,000 Seguidores):** **$${ttSeg} USD**\n• **Facebook (1,000 Seguidores):** **$${fbSeg} USD**\n• **YouTube (1,000 Suscriptores):** **$${ytSeg} USD**\n• **Spotify (1,000 Reproducciones):** **$${spRep} USD**\n\n⚡ **Entrega:** Modo Express (**48 a 72 horas**) o Modo Progresivo (**7 días en adelante**).\n¿De qué red social te gustaría ver todos los paquetes detallados?`,
         action: {
-          label: 'Hacer pedido por WhatsApp',
-          waText: '¡Hola! Quiero cotizar varios servicios de seguidores e interacciones del catálogo.',
+          label: 'Armar pedido por WhatsApp',
+          waText: '¡Hola! Quiero cotizar un paquete de crecimiento para mis redes sociales.',
         },
       };
     }
 
     return {
-      reply: `Entiendo tu consulta sobre "${query}".\n\nPara darte atención personalizada y cotización exacta en USD, puedes hablar directamente con nuestro asesor por WhatsApp al ${paymentConfig.whatsappDisplay}. Atendemos de inmediato.`,
+      reply: `🤖 **Asesor IA 2.5 Flash:** Con gusto te ayudo con **"${query}"**.\n\nEn **Growth Viral Pro** manejamos:\n• Crecimiento para **Instagram, TikTok, YouTube, Spotify, Facebook, Telegram y WhatsApp**.\n• **Cuentas de Streaming** completas (Netflix, Disney+, Max, Prime Video, Spotify, Canva Pro).\n• Entrega **Express (48 a 72 horas)** o **Progresiva (7 días en adelante)**.\n• Pagos por **Pago Móvil BDV (${paymentConfig.pagoMovil.bankCode})** y **Binance Pay (${paymentConfig.binancePayId})**.\n\n¿Qué red social o paquete deseas cotizar en USD o enviar directo por WhatsApp?`,
       action: {
-        label: `Hablar con Asesor (${paymentConfig.whatsappDisplay})`,
-        waText: `¡Hola! Tengo una consulta sobre el catálogo: "${query}". ¿Me pueden ayudar?`,
+        label: `Atención Directa (${paymentConfig.whatsappDisplay})`,
+        waText: `¡Hola! Tengo una consulta sobre: "${query}". ¿Me pueden asesorar?`,
       },
     };
   };
 
-  const handleSendMessage = (textToSend?: string) => {
+  const handleSendMessage = async (textToSend?: string) => {
     const text = (textToSend || inputText).trim();
-    if (!text) return;
+    if (!text || isTyping) return;
 
     const userMsg: Message = {
       id: `u-${Date.now()}`,
@@ -167,30 +216,65 @@ export const ChatBot: React.FC<ChatBotProps> = ({ isOpen, onClose }) => {
       time: 'Ahora',
     };
 
-    setMessages((prev) => [...prev, userMsg]);
+    const updatedHistory = [...messages, userMsg];
+    setMessages(updatedHistory);
     setInputText('');
     setIsTyping(true);
 
-    setTimeout(() => {
-      const { reply, action } = generateBotReply(text);
-      const botMsg: Message = {
-        id: `b-${Date.now()}`,
-        sender: 'bot',
-        text: reply,
-        time: 'Ahora',
-        suggestedAction: action,
-      };
-      setMessages((prev) => [...prev, botMsg]);
-      setIsTyping(false);
-    }, 500);
+    try {
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: text,
+          history: updatedHistory.slice(-8).map((m) => ({
+            sender: m.sender,
+            text: m.text,
+          })),
+          catalogSummary,
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data && data.ok && typeof data.reply === 'string' && data.reply.trim()) {
+          const botMsg: Message = {
+            id: `b-${Date.now()}`,
+            sender: 'bot',
+            engine: 'IA 2.5 Flash',
+            text: data.reply,
+            time: 'Ahora',
+            suggestedAction: data.suggestedAction,
+          };
+          setMessages((prev) => [...prev, botMsg]);
+          setIsTyping(false);
+          return;
+        }
+      }
+    } catch {
+      // Fallback to instant catalog intelligence if offline
+    }
+
+    // Instant live-catalog response fallback
+    const { reply, action } = generateSmartCatalogReply(text);
+    const fallbackMsg: Message = {
+      id: `b-${Date.now()}`,
+      sender: 'bot',
+      engine: 'IA 2.5 Flash',
+      text: reply,
+      time: 'Ahora',
+      suggestedAction: action,
+    };
+    setMessages((prev) => [...prev, fallbackMsg]);
+    setIsTyping(false);
   };
 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-50 w-[94vw] sm:w-[420px] max-h-[85vh] h-[580px] bg-zinc-950 border border-zinc-800 rounded-3xl shadow-2xl flex flex-col overflow-hidden animate-in fade-in slide-in-from-bottom-5 duration-200">
+    <div className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-50 w-[94vw] sm:w-[430px] max-h-[85vh] h-[600px] bg-zinc-950 border border-zinc-800 rounded-3xl shadow-2xl flex flex-col overflow-hidden animate-in fade-in slide-in-from-bottom-5 duration-200">
       {/* Bot Header */}
-      <div className="p-4 bg-gradient-to-r from-zinc-900 via-purple-950/40 to-zinc-900 border-b border-zinc-800 flex items-center justify-between">
+      <div className="p-4 bg-gradient-to-r from-zinc-900 via-purple-950/50 to-zinc-900 border-b border-zinc-800 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="relative">
             <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-purple-600 to-cyan-500 flex items-center justify-center text-white shadow-md">
@@ -200,24 +284,34 @@ export const ChatBot: React.FC<ChatBotProps> = ({ isOpen, onClose }) => {
           </div>
           <div>
             <div className="flex items-center gap-1.5">
-              <h3 className="text-sm font-bold text-white">Bot Automatizado</h3>
-              <span className="text-[10px] bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 rounded-full font-bold">
-                Online
+              <h3 className="text-sm font-bold text-white">Asesor Bot Automatizado</h3>
+              <span className="inline-flex items-center gap-1 text-[10px] bg-purple-500/20 text-purple-300 border border-purple-500/30 px-2 py-0.5 rounded-full font-bold">
+                <Sparkles className="w-2.5 h-2.5 text-cyan-400" />
+                IA 2.5 Flash
               </span>
             </div>
             <p className="text-[11px] text-zinc-300">
-              Respuestas instantáneas • WhatsApp {paymentConfig.whatsappDisplay}
+              Catálogo USD en vivo • WhatsApp {paymentConfig.whatsappDisplay}
             </p>
           </div>
         </div>
 
-        <button
-          onClick={onClose}
-          className="w-8 h-8 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white flex items-center justify-center transition cursor-pointer"
-          aria-label="Cerrar chat"
-        >
-          <X className="w-4 h-4" />
-        </button>
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={() => setMessages(INITIAL_MESSAGES)}
+            title="Reiniciar conversación"
+            className="w-8 h-8 rounded-xl bg-zinc-800/80 hover:bg-zinc-700 text-zinc-300 hover:text-white flex items-center justify-center transition cursor-pointer"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+          </button>
+          <button
+            onClick={onClose}
+            className="w-8 h-8 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white flex items-center justify-center transition cursor-pointer"
+            aria-label="Cerrar chat"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
       </div>
 
       {/* Messages Scroll Area */}
@@ -227,10 +321,10 @@ export const ChatBot: React.FC<ChatBotProps> = ({ isOpen, onClose }) => {
             key={m.id}
             className={`flex flex-col ${m.sender === 'user' ? 'items-end' : 'items-start'}`}
           >
-            <div className="flex items-end gap-2 max-w-[88%]">
+            <div className="flex items-end gap-2 max-w-[90%]">
               {m.sender === 'bot' && (
-                <div className="w-6 h-6 rounded-lg bg-purple-600/30 flex items-center justify-center text-purple-300 shrink-0 text-xs font-bold mb-1">
-                  AI
+                <div className="w-6 h-6 rounded-lg bg-gradient-to-tr from-purple-600/40 to-cyan-500/40 border border-purple-500/30 flex items-center justify-center text-cyan-300 shrink-0 text-[10px] font-black mb-1">
+                  2.5
                 </div>
               )}
 
@@ -241,7 +335,7 @@ export const ChatBot: React.FC<ChatBotProps> = ({ isOpen, onClose }) => {
                     : 'bg-zinc-900 border border-zinc-800 text-zinc-200 rounded-bl-xs'
                 }`}
               >
-                {m.text}
+                {renderFormattedText(m.text)}
 
                 {m.suggestedAction && (
                   <div className="mt-3 pt-2.5 border-t border-zinc-800">
@@ -265,16 +359,20 @@ export const ChatBot: React.FC<ChatBotProps> = ({ isOpen, onClose }) => {
                 </div>
               )}
             </div>
-            <span className="text-[10px] text-zinc-400 mt-1 px-8">{m.time}</span>
+            <span className="text-[10px] text-zinc-400 mt-1 px-8">
+              {m.sender === 'bot' && m.engine ? `${m.engine} • ${m.time}` : m.time}
+            </span>
           </div>
         ))}
 
         {isTyping && (
           <div className="flex items-center gap-2 text-xs text-zinc-400 px-2 py-1">
             <span className="w-2 h-2 rounded-full bg-purple-500 animate-bounce" />
-            <span className="w-2 h-2 rounded-full bg-purple-500 animate-bounce [animation-delay:0.2s]" />
+            <span className="w-2 h-2 rounded-full bg-cyan-400 animate-bounce [animation-delay:0.2s]" />
             <span className="w-2 h-2 rounded-full bg-purple-500 animate-bounce [animation-delay:0.4s]" />
-            <span className="text-[11px]">Escribiendo respuesta...</span>
+            <span className="text-[11px] text-purple-300 font-medium">
+              ⚡ 2.5 Flash respondiendo al instante...
+            </span>
           </div>
         )}
         <div ref={messagesEndRef} />
@@ -285,8 +383,10 @@ export const ChatBot: React.FC<ChatBotProps> = ({ isOpen, onClose }) => {
         {QUICK_PROMPTS.map((prompt, i) => (
           <button
             key={i}
+            type="button"
+            disabled={isTyping}
             onClick={() => handleSendMessage(prompt.query)}
-            className="whitespace-nowrap px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white text-[11px] font-medium border border-zinc-700/60 transition cursor-pointer"
+            className="whitespace-nowrap px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 text-zinc-300 hover:text-white text-[11px] font-medium border border-zinc-700/60 transition cursor-pointer"
           >
             {prompt.label}
           </button>
@@ -303,14 +403,15 @@ export const ChatBot: React.FC<ChatBotProps> = ({ isOpen, onClose }) => {
       >
         <input
           type="text"
-          placeholder="Escribe tu consulta o pide un precio..."
+          placeholder="Pregúntale a la IA 2.5 Flash sobre precios o servicios..."
           value={inputText}
           onChange={(e) => setInputText(e.target.value)}
-          className="flex-1 bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2 text-xs sm:text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-purple-500 transition"
+          disabled={isTyping}
+          className="flex-1 bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2 text-xs sm:text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-purple-500 transition disabled:opacity-60"
         />
         <button
           type="submit"
-          disabled={!inputText.trim()}
+          disabled={!inputText.trim() || isTyping}
           className="w-9 h-9 rounded-xl bg-purple-600 hover:bg-purple-500 disabled:opacity-40 disabled:hover:bg-purple-600 text-white flex items-center justify-center transition cursor-pointer shrink-0"
           aria-label="Enviar mensaje"
         >
@@ -320,3 +421,4 @@ export const ChatBot: React.FC<ChatBotProps> = ({ isOpen, onClose }) => {
     </div>
   );
 };
+
