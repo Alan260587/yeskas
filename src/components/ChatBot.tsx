@@ -152,31 +152,36 @@ export const ChatBot: React.FC<ChatBotProps> = ({ isOpen, onClose }) => {
       { key: 'instagram', matches: ['instagram', 'ig', 'reels'], label: 'Instagram' },
       { key: 'tiktok', matches: ['tiktok', 'tik tok', 'tt'], label: 'TikTok' },
       { key: 'youtube', matches: ['youtube', 'yt', 'subs', 'suscriptores', '4000', 'monetiz'], label: 'YouTube' },
-      { key: 'spotify', matches: ['spotify', 'musica', 'oyentes', 'reproducciones'], label: 'Spotify' },
+      { key: 'spotify', matches: ['spotify', 'musica', 'oyentes', 'reproducciones', 'playlist', 'podcast'], label: 'Spotify' },
       { key: 'facebook', matches: ['facebook', 'fb', 'fanpage'], label: 'Facebook' },
-      { key: 'telegram', matches: ['telegram', 'canal', 'miembros'], label: 'Telegram' },
-      { key: 'whatsapp', matches: ['canal whatsapp'], label: 'WhatsApp' },
-      { key: 'streaming', matches: ['streaming', 'netflix', 'disney', 'max', 'prime', 'crunchyroll', 'vix', 'canva', 'pantalla'], label: 'Streaming Premium' },
+      { key: 'kick', matches: ['kick', 'streamers', 'viewers'], label: 'Kick' },
+      { key: 'special', matches: ['especial', 'combo', 'paquete', 'viral'], label: 'Paquetes Especiales' },
     ];
 
     const matchedNets = networkKeywords.filter((n) => n.matches.some((m) => q.includes(m)));
 
     if (matchedNets.length > 0) {
-      const blocks = matchedNets.map((net) => {
-        const netServices = services.filter((s) => s.network === net.key);
-        const lines = netServices
-          .map((s) => `  • **${s.name}** (${s.metric}): **$${s.price} USD**`)
-          .join('\n');
-        return `📌 **${net.label}:**\n${lines}`;
-      });
+      const blocks = matchedNets
+        .map((net) => {
+          const netServices = services.filter((s) => s.network === net.key);
+          if (netServices.length === 0) return '';
+          const lines = netServices
+            .slice(0, 10)
+            .map((s) => `  • **${s.name}** (${s.metric}): **$${s.price} USD**`)
+            .join('\n');
+          return `📌 **${net.label}:**\n${lines}`;
+        })
+        .filter(Boolean);
 
-      return {
-        reply: `💰 **Precios Oficiales en Tiempo Real (USD):**\n\n${blocks.join('\n\n')}\n\n⚡ **Ritmo de entrega a elección:** Modo Express (**48 a 72 horas**) o Modo Progresivo (**7 días en adelante**).\n🛒 Puedes tocar **"+ Añadir al Pedido"** en 2 o más servicios para armar tu **Pedido Conjunto** y enviarlo directo a WhatsApp.`,
-        action: {
-          label: `Pedir ${matchedNets.map((n) => n.label).join(' / ')} por WhatsApp`,
-          waText: `¡Hola! Vi los precios en USD de ${matchedNets.map((n) => n.label).join(', ')} en el Asesor IA 2.5 Flash y quiero realizar un pedido.`,
-        },
-      };
+      if (blocks.length > 0) {
+        return {
+          reply: `💰 **Precios Oficiales en Tiempo Real (USD):**\n\n${blocks.join('\n\n')}\n\n⚡ **Ritmo de entrega a elección:** Modo Express (**48 a 72 horas**) o Modo Progresivo (**7 días en adelante**).\n🛒 Puedes tocar **"+ Añadir al Pedido"** en 2 o más servicios para armar tu **Pedido Conjunto** y enviarlo directo a WhatsApp.`,
+          action: {
+            label: `Pedir ${matchedNets.map((n) => n.label).join(' / ')} por WhatsApp`,
+            waText: `¡Hola! Vi los precios en USD de ${matchedNets.map((n) => n.label).join(', ')} en el Asesor IA 2.5 Flash y quiero realizar un pedido.`,
+          },
+        };
+      }
     }
 
     // General price / catalog overview
@@ -272,7 +277,7 @@ export const ChatBot: React.FC<ChatBotProps> = ({ isOpen, onClose }) => {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-50 w-[94vw] sm:w-[430px] max-h-[85vh] h-[600px] bg-zinc-950 border border-zinc-800 rounded-3xl shadow-2xl flex flex-col overflow-hidden animate-in fade-in slide-in-from-bottom-5 duration-200">
+    <div className="fixed inset-x-2 bottom-2 sm:inset-x-auto sm:right-6 sm:bottom-6 z-50 w-auto sm:w-[430px] max-h-[92vh] sm:max-h-[85vh] h-[85vh] sm:h-[600px] bg-zinc-950 border border-zinc-800 rounded-2xl sm:rounded-3xl shadow-2xl flex flex-col overflow-hidden animate-in fade-in slide-in-from-bottom-5 duration-200">
       {/* Bot Header */}
       <div className="p-4 bg-gradient-to-r from-zinc-900 via-purple-950/50 to-zinc-900 border-b border-zinc-800 flex items-center justify-between">
         <div className="flex items-center gap-3">

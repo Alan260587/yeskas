@@ -56,11 +56,40 @@ function AppContent() {
   const [quickCartSpeed, setQuickCartSpeed] = useState<DeliverySpeedMode>('express');
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isBotOpen, setIsBotOpen] = useState(false);
+  const [showWelcomeBubble, setShowWelcomeBubble] = useState(true);
   const [isInstructionsOpen, setIsInstructionsOpen] = useState(false);
   const [instructionsInitialTab, setInstructionsInitialTab] = useState<InstructionsTabType>('how');
   const [isAdminModalOpen, setIsAdminModalOpen] = useState(false);
   const [activeCategory, setActiveCategory] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
+
+  // Apertura automática de bienvenida del Bot IA 2.5 Flash (a los 4.5 segundos, 1 vez por sesión)
+  useEffect(() => {
+    let alreadyWelcomed = false;
+    try {
+      alreadyWelcomed = sessionStorage.getItem('growth_viral_bot_welcomed_v1') === '1';
+    } catch {
+      // ignore storage errors
+    }
+    if (alreadyWelcomed) return;
+
+    const timer = window.setTimeout(() => {
+      setIsBotOpen((prevBot) => {
+        // Solo abre automáticamente si el usuario no tiene otro modal abierto
+        if (!isCartOpen && !isInstructionsOpen && !isAdminModalOpen && !prevBot) {
+          try {
+            sessionStorage.setItem('growth_viral_bot_welcomed_v1', '1');
+          } catch {
+            // ignore
+          }
+          return true;
+        }
+        return prevBot;
+      });
+    }, 4500);
+
+    return () => window.clearTimeout(timer);
+  }, [isCartOpen, isInstructionsOpen, isAdminModalOpen]);
 
   // Persist cart to localStorage
   useEffect(() => {
@@ -280,8 +309,8 @@ function AppContent() {
 
   return (
     <div
-      className={`min-h-screen bg-zinc-950 text-zinc-100 flex flex-col selection:bg-purple-600 selection:text-white ${
-        cart.length > 0 ? 'pb-36 sm:pb-28' : ''
+      className={`min-h-screen w-full overflow-x-hidden bg-zinc-950 text-zinc-100 flex flex-col selection:bg-purple-600 selection:text-white ${
+        cart.length > 0 ? 'pb-44 sm:pb-28' : ''
       }`}
     >
       {/* Top Navbar */}
@@ -658,21 +687,59 @@ function AppContent() {
         </div>
       )}
 
-      {/* Floating Action Buttons (Moved up automatically when bottom Cart bar is visible) */}
+      {/* Floating Action Buttons (Prominently visible on both mobile and desktop) */}
       <div
-        className={`fixed right-4 sm:right-6 z-30 flex flex-col items-end gap-2.5 pointer-events-none transition-all ${
-          cart.length > 0 ? 'bottom-32 sm:bottom-28' : 'bottom-5'
+        className={`fixed right-3 sm:right-6 z-[45] flex flex-col items-end gap-2 pointer-events-none transition-all duration-200 ${
+          cart.length > 0 ? 'bottom-44 sm:bottom-28' : 'bottom-4 sm:bottom-6'
         }`}
       >
+        {!isBotOpen && showWelcomeBubble && (
+          <div className="pointer-events-auto relative max-w-[235px] sm:max-w-[270px] bg-zinc-900/95 border border-cyan-500/60 rounded-2xl p-2.5 sm:p-3 shadow-2xl shadow-cyan-950/70 backdrop-blur-md animate-in fade-in slide-in-from-bottom-3 duration-200">
+            <button
+              type="button"
+              onClick={() => setShowWelcomeBubble(false)}
+              className="absolute -top-2 -left-2 w-5 h-5 rounded-full bg-zinc-800 hover:bg-zinc-700 border border-zinc-600 text-zinc-300 hover:text-white flex items-center justify-center text-[10px] cursor-pointer"
+              aria-label="Cerrar saludo"
+            >
+              <X className="w-3 h-3" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsBotOpen(true)}
+              className="text-left w-full cursor-pointer group"
+            >
+              <div className="flex items-center gap-1.5 mb-1">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                <span className="text-[11px] font-black text-cyan-300 group-hover:text-cyan-200">
+                  👋 ¡Hola! Soy tu Asesor IA 2.5
+                </span>
+              </div>
+              <p className="text-[11px] text-zinc-200 leading-snug">
+                ¿Te ayudo con <strong className="text-white">precios en USD</strong> o entregas <strong className="text-amber-300">Express 48-72h</strong>? Toca aquí.
+              </p>
+            </button>
+          </div>
+        )}
+
         {!isBotOpen && (
           <button
+            type="button"
             onClick={() => setIsBotOpen(true)}
-            className="pointer-events-auto flex items-center gap-2 px-3.5 py-2.5 rounded-2xl bg-zinc-900 hover:bg-zinc-800 text-cyan-400 border border-cyan-500/40 text-xs font-bold shadow-xl transition cursor-pointer"
-            aria-label="Abrir asistente virtual"
+            className="pointer-events-auto flex items-center gap-2 px-3.5 py-2.5 sm:px-4 sm:py-3 rounded-2xl bg-zinc-950/95 hover:bg-zinc-900 text-cyan-300 border-2 border-cyan-500/70 text-xs sm:text-sm font-black shadow-2xl shadow-cyan-950/80 transition-all hover:scale-105 active:scale-95 cursor-pointer backdrop-blur-md"
+            aria-label="Abrir Asesor Bot IA 2.5 Flash"
           >
-            <Bot className="w-4 h-4 text-cyan-400" />
-            <span className="hidden sm:inline">Bot de Respuestas</span>
-            <span className="w-2 h-2 rounded-full bg-emerald-400" />
+            <div className="w-6 h-6 rounded-lg bg-cyan-500/20 border border-cyan-400/40 flex items-center justify-center shrink-0">
+              <Bot className="w-4 h-4 text-cyan-300" />
+            </div>
+            <div className="flex flex-col text-left leading-none">
+              <span className="text-[11px] sm:text-xs font-black text-white flex items-center gap-1">
+                Bot IA 2.5
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse inline-block" />
+              </span>
+              <span className="text-[9px] text-cyan-400 font-semibold">
+                Asesor en vivo
+              </span>
+            </div>
           </button>
         )}
 
@@ -681,11 +748,11 @@ function AppContent() {
             href={generalWaUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="pointer-events-auto w-13 h-13 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white flex items-center justify-center shadow-xl transition active:scale-95 border border-emerald-400/30"
+            className="pointer-events-auto w-12 h-12 sm:w-13 sm:h-13 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white flex items-center justify-center shadow-xl transition active:scale-95 border border-emerald-400/30"
             aria-label="Abrir chat en WhatsApp"
             title={`WhatsApp: ${paymentConfig.whatsappDisplay}`}
           >
-            <MessageCircle className="w-6 h-6 fill-white" />
+            <MessageCircle className="w-5 h-5 sm:w-6 sm:h-6 fill-white" />
           </a>
         )}
       </div>

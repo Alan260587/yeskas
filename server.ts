@@ -794,6 +794,20 @@ async function startServer() {
   // AI FLASH AUTOMATED CHATBOT ENDPOINT (/api/chat)
   // =========================================================================
 
+  function extractCatalogSection(summary: string, header: string): string {
+    if (!summary) return '';
+    const idx = summary.indexOf(`[${header}]`);
+    if (idx === -1) return '';
+    const after = summary.slice(idx + header.length + 2).trim();
+    const nextBracket = after.indexOf('\n[');
+    const block = nextBracket !== -1 ? after.slice(0, nextBracket).trim() : after.trim();
+    return block
+      .split('\n')
+      .slice(0, 8)
+      .map((line) => (line.startsWith('- ') ? `• ${line.slice(2)}` : line))
+      .join('\n');
+  }
+
   function generateServerCatalogReply(
     query: string,
     catalogSummary: string,
@@ -812,7 +826,7 @@ async function startServer() {
       q.includes('tarda')
     ) {
       return {
-        reply: `🚀 **Ritmo y Velocidad de Entrega Oficial (IA Flash):**\n\nPuedes seleccionar la velocidad para cada producto o para tu **Pedido Conjunto**:\n• ⚡ **Modo Express:** Entrega acelerada de **48 a 72 horas** (ideal para metas rápidas y campañas de impulso).\n• 🛡️ **Modo Progresivo (Drip-Feed):** Entrega gradual de **7 días en adelante** (crecimiento orgánico escalonado para máxima protección del algoritmo).\n\nTodos los paquetes incluyen **Garantía Antidrop de 30 días** y jamás te pediremos tus contraseñas.`,
+        reply: `🚀 **Ritmo y Velocidad de Entrega Oficial (Gemini 2.5 Flash):**\n\nPuedes seleccionar la velocidad para cada producto o para tu **Pedido Conjunto**:\n• ⚡ **Modo Express:** Entrega acelerada de **48 a 72 horas** (ideal para metas rápidas y campañas de impulso).\n• 🛡️ **Modo Progresivo (Drip-Feed):** Entrega gradual de **7 días en adelante** (crecimiento orgánico escalonado para máxima protección del algoritmo).\n\nTodos los paquetes incluyen **Garantía Antidrop de 30 días** y jamás te pediremos tus contraseñas.`,
         suggestedAction: {
           label: 'Coordinar pedido y velocidad por WhatsApp',
           waText: '¡Hola! Quiero realizar un pedido y elegir mi ritmo de entrega (Express 48 a 72 horas o Progresivo 7 días en adelante).',
@@ -841,8 +855,12 @@ async function startServer() {
     }
 
     if (q.includes('oferta') || q.includes('solo por hoy') || q.includes('descuento') || q.includes('promo')) {
+      const liveOffers = extractCatalogSection(catalogSummary, 'OFERTAS ESPECIALES SOLO POR HOY');
       return {
-        reply: `🔥 **Ofertas Relámpago "Solo por Hoy" (Precios en USD):**\n\n• **Impulso YouTube Básico:** 358 Likes + 1,000 Vistas garantizadas.\n• **Mega Crecimiento IG & TikTok:** 10,000 Seguidores para acelerar alcance masivo.\n• **Plan YouTube Viral Masiva:** 1 Millón de Visitas + 10,000 Likes + 1,000 Comentarios.\n\nPuedes agregar 2 o más ofertas a tu **Pedido Conjunto** en **Modo Express (48-72h)** o **Modo Progresivo (7d+)** y enviarlas en un solo mensaje.`,
+        reply: `🔥 **Ofertas Relámpago "Solo por Hoy" (Precios en USD):**\n\n${
+          liveOffers ||
+          '• **Impulso YouTube Básico:** 358 Likes + 1,000 Vistas garantizadas.\n• **Mega Crecimiento IG & TikTok:** 10,000 Seguidores para acelerar alcance masivo.\n• **Plan YouTube Viral Masiva:** 1 Millón de Visitas + 10,000 Likes + 1,000 Comentarios.'
+        }\n\nPuedes agregar 2 o más ofertas a tu **Pedido Conjunto** en **Modo Express (48-72h)** o **Modo Progresivo (7d+)** y enviarlas en un solo mensaje.`,
         suggestedAction: {
           label: 'Solicitar Ofertas Especiales en WhatsApp',
           waText: '¡Hola! Me interesan las Ofertas Especiales "Solo por Hoy" del catálogo.',
@@ -851,8 +869,12 @@ async function startServer() {
     }
 
     if (q.includes('youtube') || q.includes('4000') || q.includes('monetiz') || q.includes('socio') || q.includes('subs')) {
+      const liveYt = extractCatalogSection(catalogSummary, 'YOUTUBE');
       return {
-        reply: `🎬 **Paquetes de YouTube y Monetización (Precios en USD):**\n\n• **1,000 Suscriptores Reales:** $60 USD\n• **1,000 Horas de Reproducción:** $40 USD\n• **4,000 Horas (Requisito Monetización Completo):** $150 USD\n• **1,000 Visitas de Alta Retención:** $10 USD\n• **1,000 Likes Garantizados:** $12 USD\n\n⚡ Entrega disponible en **Modo Express (48 a 72 horas)** o **Modo Progresivo (7 días en adelante)** para cuidar el canal.`,
+        reply: `🎬 **Paquetes de YouTube y Monetización (Precios en USD en Vivo):**\n\n${
+          liveYt ||
+          '• **1,000 Suscriptores Reales:** $60 USD\n• **1,000 Horas de Reproducción:** $40 USD\n• **4,000 Horas (Requisito Monetización Completo):** $150 USD\n• **1,000 Visitas de Alta Retención:** $10 USD\n• **1,000 Likes Garantizados:** $12 USD'
+        }\n\n⚡ Entrega disponible en **Modo Express (48 a 72 horas)** o **Modo Progresivo (7 días en adelante)** para cuidar tu canal.`,
         suggestedAction: {
           label: 'Cotizar paquete YouTube por WhatsApp',
           waText: '¡Hola! Quiero cotizar paquetes de YouTube y monetización de 4,000 horas o suscriptores.',
@@ -861,8 +883,20 @@ async function startServer() {
     }
 
     if (q.includes('instagram') || q.includes('ig') || q.includes('tiktok') || q.includes('reels')) {
+      const liveIg = extractCatalogSection(catalogSummary, 'INSTAGRAM');
+      const liveTt = extractCatalogSection(catalogSummary, 'TIKTOK');
+      const combined = [
+        liveIg ? `📌 **Instagram:**\n${liveIg}` : '',
+        liveTt ? `📌 **TikTok:**\n${liveTt}` : '',
+      ]
+        .filter(Boolean)
+        .join('\n\n');
+
       return {
-        reply: `📱 **Precios Destacados para Instagram y TikTok (USD):**\n\n• **Instagram 1,000 Seguidores:** $15 USD\n• **Instagram 1,000 Likes:** $6 USD\n• **Instagram 1,000 Vistas Reels:** $3.5 USD\n• **TikTok 1,000 Seguidores:** $15 USD\n• **TikTok 1,000 Likes:** $6 USD\n• **TikTok 1,000 Vistas:** $3 USD\n\n⚡ Puedes elegir entrega **Express (48 a 72 horas)** o **Progresiva (7 días en adelante)**. ¡Puedes armar un pedido conjunto con varios servicios en el carrito!`,
+        reply: `📱 **Precios Oficiales en Tiempo Real para Instagram y TikTok (USD):**\n\n${
+          combined ||
+          '• **Instagram 1,000 Seguidores:** $15 USD\n• **Instagram 1,000 Likes:** $6 USD\n• **TikTok 1,000 Seguidores:** $15 USD\n• **TikTok 1,000 Likes:** $6 USD'
+        }\n\n⚡ Puedes elegir entrega **Express (48 a 72 horas)** o **Progresiva (7 días en adelante)**. ¡Puedes armar un pedido conjunto con varios servicios en el carrito!`,
         suggestedAction: {
           label: 'Pedir Instagram / TikTok por WhatsApp',
           waText: '¡Hola! Quiero pedir servicios de crecimiento para Instagram y TikTok.',
@@ -871,8 +905,12 @@ async function startServer() {
     }
 
     if (q.includes('spotify') || q.includes('musica') || q.includes('oyente')) {
+      const liveSp = extractCatalogSection(catalogSummary, 'SPOTIFY');
       return {
-        reply: `🎧 **Servicios Digitales para Spotify (USD):**\n\n• **1,000 Reproducciones:** $6.99 USD\n• **1,000 Oyentes Mensuales:** $9.99 USD\n• **1,000 Seguidores de Artista/Playlist:** $12.99 USD\n• **1,000 Saves / Guardados:** $7.99 USD\n\nEntrega disponible en **Modo Express (48-72h)** o **Modo Progresivo (7d+)** con garantía antidrop.`,
+        reply: `🎧 **Servicios Digitales para Spotify (USD en Vivo):**\n\n${
+          liveSp ||
+          '• **1,000 Reproducciones:** $6.99 USD\n• **1,000 Oyentes Mensuales:** $9.99 USD\n• **1,000 Seguidores de Artista/Playlist:** $12.99 USD'
+        }\n\nEntrega disponible en **Modo Express (48-72h)** o **Modo Progresivo (7d+)** con garantía antidrop.`,
         suggestedAction: {
           label: 'Pedir Spotify por WhatsApp',
           waText: '¡Hola! Me interesan los paquetes de Spotify del catálogo.',
@@ -880,18 +918,34 @@ async function startServer() {
       };
     }
 
-    if (q.includes('streaming') || q.includes('netflix') || q.includes('disney') || q.includes('max') || q.includes('pantalla')) {
+    if (q.includes('facebook') || q.includes('fb') || q.includes('fanpage')) {
+      const liveFb = extractCatalogSection(catalogSummary, 'FACEBOOK');
       return {
-        reply: `📺 **Cuentas y Pantallas de Streaming Premium (USD):**\n\n• **Netflix Premium:** Cuenta completa o pantalla con garantía de reposición.\n• **Disney+ / Star+:** Cuenta premium mensual.\n• **Max (HBO):** Cuenta premium.\n• **Amazon Prime Video / Canva Pro:** Disponibles para entrega inmediata.\n\nPara streaming entregamos correo y contraseña verificados para activación al instante.`,
+        reply: `📘 **Servicios Digitales para Facebook (USD en Vivo):**\n\n${
+          liveFb || '• **1,000 Seguidores / Likes de Página:** $15 USD'
+        }\n\n⚡ Entrega en **Modo Express (48 a 72 horas)** o **Modo Progresivo (7 días en adelante)**.`,
         suggestedAction: {
-          label: 'Consultar disponibilidad de Streaming en WhatsApp',
-          waText: '¡Hola! Quiero consultar cuentas o pantallas de Streaming disponibles para hoy.',
+          label: 'Pedir Facebook por WhatsApp',
+          waText: '¡Hola! Me interesan los paquetes de crecimiento para Facebook.',
+        },
+      };
+    }
+
+    if (q.includes('kick') || q.includes('streamer') || q.includes('viewer')) {
+      const liveKick = extractCatalogSection(catalogSummary, 'KICK');
+      return {
+        reply: `🟢 **Servicios Digitales para Kick (USD en Vivo):**\n\n${
+          liveKick || '• **Seguidores y Viewers en Vivo para Kick**'
+        }\n\n⚡ Entrega en **Modo Express (48 a 72 horas)** o **Modo Progresivo (7 días en adelante)**.`,
+        suggestedAction: {
+          label: 'Pedir Kick por WhatsApp',
+          waText: '¡Hola! Me interesan los paquetes de crecimiento para mi canal de Kick.',
         },
       };
     }
 
     return {
-      reply: `🤖 **Asesor Virtual IA Flash:** Con gusto te oriento con **"${query}"**.\n\nEn **Imperio Digital / Growth Viral Pro** ofrecemos:\n• Crecimiento en redes: **Instagram, TikTok, YouTube, Spotify, Facebook, Telegram y WhatsApp**.\n• Modalidades de entrega: **Modo Express (48 a 72 horas)** o **Modo Progresivo (7 días en adelante)**.\n• Carrito multi-pedido: Puedes añadir varios servicios a tu **Pedido Conjunto** y enviarlos en un solo mensaje.\n• Métodos de pago: **Pago Móvil BDV (${pay.pagoMovil.bankCode})** y **Binance Pay (ID: ${pay.binancePayId})**.\n\n¿Qué red social o paquete deseas cotizar?`,
+      reply: `🤖 **Asesor Virtual Gemini 2.5 Flash:** Con gusto te oriento con **"${query}"**.\n\nEn **Growth Viral Pro** ofrecemos:\n• Crecimiento en redes: **Instagram, TikTok, YouTube, Spotify, Facebook, Kick y Paquetes Especiales**.\n• Modalidades de entrega: **Modo Express (48 a 72 horas)** o **Modo Progresivo (7 días en adelante)**.\n• Carrito multi-pedido: Puedes añadir 2 o más servicios a tu **Pedido Conjunto** y enviarlos en un solo mensaje.\n• Métodos de pago: **Pago Móvil BDV (${pay.pagoMovil.bankCode})** y **Binance Pay (ID: ${pay.binancePayId})**.\n\n¿Qué red social o paquete deseas cotizar en USD?`,
       suggestedAction: {
         label: `Atención Directa (${pay.whatsappDisplay})`,
         waText: `¡Hola! Tengo una consulta sobre: "${query}". ¿Me pueden ayudar?`,
