@@ -1,0 +1,18 @@
+{
+  "serviceOverrides": {},
+  "customServices": [],
+  "specialOfferOverrides": {},
+  "diagnosticPriceOverrides": {},
+  "paymentConfig": {
+    "whatsappPhone": "584242934550",
+    "whatsappDisplay": "+58 424 2934550",
+    "binancePayId": "965190483",
+    "pagoMovil": {
+      "bank": "Banco de Venezuela",
+      "bankCode": "0102",
+      "phone": "04242934550",
+      "id": "28525460"
+    }
+  },
+  "updatedAt": 1792874824420
+}

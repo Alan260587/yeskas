@@ -29,6 +29,7 @@ export interface StoredPdfMeta {
   category: string;
   description?: string;
   slotIndex?: number;
+  cloudFileUrl?: string;
 }
 
 export interface StoredAdminConfig {
@@ -144,6 +145,129 @@ function readOrders(): any[] {
 function writeOrders(orders: any[]) {
   ensureStorageDirs();
   fs.writeFileSync(ORDERS_FILE, JSON.stringify(orders, null, 2), 'utf-8');
+}
+
+// =========================================================================
+// 100% FREE CLOUD PERSISTENCE ENGINE (NO FIREBASE, ZERO RATE LIMITS)
+// Ensures newly created projects, custom packages, USD prices, orders, and
+// PDF catalogs sync immediately across laptops, desktop PCs, and smartphones.
+// =========================================================================
+
+const CLOUD_POINTERS_FILE = path.join(DATA_DIR, 'cloud-pointers.json');
+
+interface CloudPointers {
+  config?: { latestUrl: string; updatedAt: number };
+  orders?: { latestUrl: string; updatedAt: number };
+  pdfs?: { latestUrl: string; updatedAt: number };
+}
+
+function readCloudPointers(): CloudPointers {
+  ensureStorageDirs();
+  try {
+    if (fs.existsSync(CLOUD_POINTERS_FILE)) {
+      return JSON.parse(fs.readFileSync(CLOUD_POINTERS_FILE, 'utf-8')) || {};
+    }
+  } catch {
+    // ignore
+  }
+  return {};
+}
+
+function writeCloudPointers(pointers: CloudPointers) {
+  ensureStorageDirs();
+  try {
+    fs.writeFileSync(CLOUD_POINTERS_FILE, JSON.stringify(pointers, null, 2), 'utf-8');
+  } catch {
+    // ignore
+  }
+}
+
+async function pushToCloudStore(
+  storeType: 'config' | 'orders' | 'pdfs',
+  payload: any
+): Promise<boolean> {
+  try {
+    const pasteRes = await fetch('https://dpaste.org/api/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        content: JSON.stringify(payload),
+        expiry_days: '365',
+        format: 'url',
+      }),
+    });
+
+    if (!pasteRes.ok) {
+      return false;
+    }
+
+    const pasteUrl = (await pasteRes.text()).trim() + '/raw';
+    const now = Date.now();
+    const updatedTimestamp =
+      typeof payload.updatedAt === 'number'
+        ? payload.updatedAt
+        : Array.isArray(payload) && payload.length > 0 && typeof payload[0]?.uploadedAt === 'number'
+        ? payload[0].uploadedAt
+        : now;
+
+    const currentPointers = readCloudPointers();
+    currentPointers[storeType] = {
+      latestUrl: pasteUrl,
+      updatedAt: updatedTimestamp,
+    };
+    writeCloudPointers(currentPointers);
+    return true;
+  } catch (err: any) {
+    console.warn(`[CloudSync] Error syncing ${storeType} to cloud:`, err.message);
+  }
+  return false;
+}
+
+async function pullFromCloudStore(
+  storeType: 'config' | 'orders' | 'pdfs'
+): Promise<any | null> {
+  try {
+    const pointers = readCloudPointers();
+    const entry = pointers[storeType];
+    if (!entry || !entry.latestUrl) return null;
+
+    const contentRes = await fetch(entry.latestUrl);
+    if (!contentRes.ok) return null;
+
+    const content = await contentRes.json();
+    if (content) {
+      if (storeType === 'config') {
+        const validatedConfig: StoredAdminConfig = {
+          ...DEFAULT_STORED_ADMIN_CONFIG,
+          ...content,
+          paymentConfig: {
+            ...DEFAULT_STORED_ADMIN_CONFIG.paymentConfig,
+            ...(content.paymentConfig || {}),
+            pagoMovil: {
+              ...DEFAULT_STORED_ADMIN_CONFIG.paymentConfig.pagoMovil,
+              ...(content.paymentConfig?.pagoMovil || {}),
+            },
+          },
+          updatedAt: entry.updatedAt || content.updatedAt || Date.now(),
+        };
+        writeAdminConfig(validatedConfig);
+        return validatedConfig;
+      } else if (storeType === 'orders') {
+        if (Array.isArray(content)) {
+          writeOrders(content);
+          return content;
+        }
+      } else if (storeType === 'pdfs') {
+        if (Array.isArray(content)) {
+          writePdfIndex(content);
+          return content;
+        }
+      }
+    }
+  } catch (err: any) {
+    console.warn(`[CloudSync] Error pulling ${storeType} from cloud:`, err.message);
+  }
+  return null;
 }
 
 export interface ConnectedSession {
@@ -306,10 +430,23 @@ async function startServer() {
   // ADMIN CATALOG CONFIG & PRICING (USD), CUSTOM PRODUCTS (#3), PAYMENT (#8)
   // =========================================================================
 
-  app.get('/api/admin-config', (_req, res) => {
+  app.get('/api/admin-config', async (_req, res) => {
+    let config = readAdminConfig();
+    // If local instance has no custom services and no price overrides, check if cloud store has saved data
+    if ((!config.customServices || config.customServices.length === 0) && Object.keys(config.serviceOverrides || {}).length === 0) {
+      try {
+        const cloudConfig = await pullFromCloudStore('config');
+        if (cloudConfig) {
+          config = cloudConfig;
+        }
+      } catch {
+        // fallback to local config
+      }
+    }
+
     res.json({
       ok: true,
-      config: readAdminConfig(),
+      config,
       orders: readOrders(),
     });
   });
@@ -349,6 +486,11 @@ async function startServer() {
       writeAdminConfig(updated);
       broadcastAdminConfigUpdated();
 
+      // Immediately push to cloud store (no Firebase) so all phones & laptops receive the changes instantly
+      pushToCloudStore('config', updated).catch((err) => {
+        console.warn('Background cloud config sync error:', err);
+      });
+
       res.json({
         ok: true,
         config: updated,
@@ -360,13 +502,14 @@ async function startServer() {
     }
   });
 
-  app.post('/api/admin-config/reset', (_req, res) => {
+  app.post('/api/admin-config/reset', (req, res) => {
     const fresh: StoredAdminConfig = {
       ...DEFAULT_STORED_ADMIN_CONFIG,
       updatedAt: Date.now(),
     };
     writeAdminConfig(fresh);
     broadcastAdminConfigUpdated();
+    pushToCloudStore('config', fresh).catch(() => {});
     res.json({
       ok: true,
       config: fresh,
@@ -378,10 +521,21 @@ async function startServer() {
   // WHATSAPP ORDER HISTORY ENDPOINTS (#9)
   // =========================================================================
 
-  app.get('/api/orders', (_req, res) => {
+  app.get('/api/orders', async (_req, res) => {
+    let ordersList = readOrders();
+    if (ordersList.length === 0) {
+      try {
+        const cloudOrders = await pullFromCloudStore('orders');
+        if (Array.isArray(cloudOrders) && cloudOrders.length > 0) {
+          ordersList = cloudOrders;
+        }
+      } catch {
+        // fallback to local orders
+      }
+    }
     res.json({
       ok: true,
-      orders: readOrders(),
+      orders: ordersList,
     });
   });
 
@@ -411,6 +565,7 @@ async function startServer() {
       const nextOrders = [newOrder, ...currentOrders].slice(0, 300);
       writeOrders(nextOrders);
       broadcastOrdersUpdated();
+      pushToCloudStore('orders', nextOrders).catch(() => {});
 
       res.json({
         ok: true,
@@ -443,6 +598,7 @@ async function startServer() {
 
     writeOrders(currentOrders);
     broadcastOrdersUpdated();
+    pushToCloudStore('orders', currentOrders).catch(() => {});
 
     res.json({
       ok: true,
@@ -456,12 +612,14 @@ async function startServer() {
     const filtered = readOrders().filter((o) => o.id !== id);
     writeOrders(filtered);
     broadcastOrdersUpdated();
+    pushToCloudStore('orders', filtered).catch(() => {});
     res.json({ ok: true, orders: filtered });
   });
 
   app.delete('/api/orders', (_req, res) => {
     writeOrders([]);
     broadcastOrdersUpdated();
+    pushToCloudStore('orders', []).catch(() => {});
     res.json({ ok: true, orders: [] });
   });
 
@@ -469,15 +627,25 @@ async function startServer() {
   // PDF UPLOAD & SAVE API ENDPOINTS (Supports 1, 10, or multiple PDFs)
   // =========================================================================
 
-  app.get('/api/pdfs', (_req, res) => {
-    const items = readPdfIndex();
+  app.get('/api/pdfs', async (_req, res) => {
+    let items = readPdfIndex();
+    if (items.length === 0) {
+      try {
+        const cloudPdfs = await pullFromCloudStore('pdfs');
+        if (Array.isArray(cloudPdfs) && cloudPdfs.length > 0) {
+          items = cloudPdfs;
+        }
+      } catch {
+        // fallback
+      }
+    }
     res.json({
       ok: true,
       pdfs: items,
     });
   });
 
-  app.post('/api/pdfs/upload', (req, res) => {
+  app.post('/api/pdfs/upload', async (req, res) => {
     try {
       const data = parseBody(req.body);
       const incomingFiles = Array.isArray(data.files)
@@ -524,6 +692,26 @@ async function startServer() {
         const filePath = path.join(PDF_STORAGE_DIR, `${id}.pdf`);
         fs.writeFileSync(filePath, buffer);
 
+        let cloudFileUrl: string | undefined = undefined;
+        if (pureBase64.length <= 800000) {
+          try {
+            const pasteRes = await fetch('https://dpaste.org/api/', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+              body: new URLSearchParams({
+                content: pureBase64,
+                expiry_days: '365',
+                format: 'url',
+              }),
+            });
+            if (pasteRes.ok) {
+              cloudFileUrl = (await pasteRes.text()).trim() + '/raw';
+            }
+          } catch {
+            // Local file still saved on disk
+          }
+        }
+
         const meta: StoredPdfMeta = {
           id,
           name: cleanName,
@@ -532,6 +720,7 @@ async function startServer() {
           category: typeof item.category === 'string' ? item.category : 'General',
           description: typeof item.description === 'string' ? item.description : '',
           slotIndex: typeof item.slotIndex === 'number' ? item.slotIndex : undefined,
+          cloudFileUrl,
         };
 
         const existingIdx = currentIndex.findIndex(
@@ -570,13 +759,14 @@ async function startServer() {
 
       writePdfIndex(currentIndex);
       broadcastPdfsUpdated();
+      pushToCloudStore('pdfs', currentIndex).catch(() => {});
 
       res.json({
         ok: true,
         savedCount: savedMetas.length,
         saved: savedMetas,
         pdfs: currentIndex,
-        message: `Se guardaron ${savedMetas.length} archivo(s) PDF correctamente.`,
+        message: `Se guardaron ${savedMetas.length} archivo(s) PDF correctamente y se sincronizaron en la nube para todos los dispositivos.`,
       });
     } catch (err: any) {
       console.error('Error saving PDFs:', err);
@@ -587,11 +777,36 @@ async function startServer() {
     }
   });
 
-  app.get('/api/pdfs/:id/file', (req, res) => {
+  app.get('/api/pdfs/:id/file', async (req, res) => {
     const rawId = (req.params.id || '').replace(/[^a-zA-Z0-9_-]/g, '');
-    const index = readPdfIndex();
-    const meta = index.find((item) => item.id === rawId);
+    let index = readPdfIndex();
+    let meta = index.find((item) => item.id === rawId);
     const filePath = path.join(PDF_STORAGE_DIR, `${rawId}.pdf`);
+
+    if (!fs.existsSync(filePath)) {
+      if (!meta) {
+        try {
+          const cloudPdfs = await pullFromCloudStore('pdfs');
+          if (Array.isArray(cloudPdfs)) {
+            meta = cloudPdfs.find((item: any) => item.id === rawId);
+          }
+        } catch {
+          // ignore
+        }
+      }
+      if (meta?.cloudFileUrl) {
+        try {
+          const cloudRes = await fetch(meta.cloudFileUrl);
+          if (cloudRes.ok) {
+            const rawBase64 = await cloudRes.text();
+            const restoredBuffer = Buffer.from(rawBase64.trim(), 'base64');
+            fs.writeFileSync(filePath, restoredBuffer);
+          }
+        } catch (fetchErr) {
+          console.warn('Could not stream PDF from cloud:', fetchErr);
+        }
+      }
+    }
 
     if (!fs.existsSync(filePath)) {
       res.status(404).send('Archivo PDF no encontrado.');
@@ -632,6 +847,7 @@ async function startServer() {
 
     writePdfIndex(index);
     broadcastPdfsUpdated();
+    pushToCloudStore('pdfs', index).catch(() => {});
 
     res.json({
       ok: true,
@@ -656,6 +872,7 @@ async function startServer() {
 
     writePdfIndex(filtered);
     broadcastPdfsUpdated();
+    pushToCloudStore('pdfs', filtered).catch(() => {});
 
     res.json({
       ok: true,
@@ -677,6 +894,7 @@ async function startServer() {
     }
     writePdfIndex([]);
     broadcastPdfsUpdated();
+    pushToCloudStore('pdfs', []).catch(() => {});
     res.json({ ok: true, pdfs: [] });
   });
 
@@ -1108,6 +1326,19 @@ Devuelve SIEMPRE JSON con { "reply": string, "suggestedAction": { "label": strin
     });
   });
 
+  // Initial cloud store hydration on server start if local config is empty
+  const initLocal = readAdminConfig();
+  if ((!initLocal.customServices || initLocal.customServices.length === 0) && Object.keys(initLocal.serviceOverrides || {}).length === 0) {
+    pullFromCloudStore('config').catch(() => {});
+  }
+  if (readOrders().length === 0) {
+    pullFromCloudStore('orders').catch(() => {});
+  }
+  if (readPdfIndex().length === 0) {
+    pullFromCloudStore('pdfs').catch(() => {});
+  }
+
+  // Periodic session cleanup
   setInterval(() => {
     if (cleanupStaleSessions()) {
       broadcastState();

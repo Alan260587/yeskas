@@ -105,7 +105,11 @@ export const SpecialOffers: React.FC<SpecialOffersProps> = React.memo(
                   {/* Image */}
                   <div className="relative h-40 w-full overflow-hidden bg-zinc-950">
                     <img
-                      src={offer.image.replace('w=800&q=80', 'w=480&q=75')}
+                      src={(
+                        offer.image && offer.image.trim()
+                          ? offer.image.trim()
+                          : 'https://images.unsplash.com/photo-1611162616305-c69b3fa7fbe0?auto=format&fit=crop&w=480&q=75'
+                      ).replace('w=800&q=80', 'w=480&q=75')}
                       alt={offer.title}
                       loading="lazy"
                       decoding="async"

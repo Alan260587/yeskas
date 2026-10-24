@@ -14,6 +14,7 @@ import {
   DEFAULT_DIAGNOSTIC_PRICES,
   DEFAULT_PAYMENT_CONFIG,
 } from '../data/catalogData';
+import { fetchAndSyncSavedPdfs } from '../utils/pdfStorage';
 
 const LOCAL_CONFIG_KEY = 'growth_viral_admin_config_v1';
 const LOCAL_ORDERS_KEY = 'growth_viral_orders_history_v1';
@@ -125,8 +126,18 @@ export const CatalogConfigProvider: React.FC<{ children: React.ReactNode }> = ({
     return [];
   });
 
+  const lastConfigFingerprintRef = React.useRef<string>('');
+
   const applyServerConfig = useCallback((config: any) => {
     if (!config || typeof config !== 'object') return;
+
+    // Fast fingerprint comparison to avoid unnecessary re-renders
+    const fingerprint = `${config.updatedAt || 0}_${(config.customServices || []).length}_${Object.keys(config.serviceOverrides || {}).length}_${Object.keys(config.diagnosticPriceOverrides || {}).length}`;
+    if (lastConfigFingerprintRef.current === fingerprint) {
+      return;
+    }
+    lastConfigFingerprintRef.current = fingerprint;
+
     const nextState: StoredAdminState = {
       serviceOverrides: config.serviceOverrides || {},
       customServices: Array.isArray(config.customServices) ? config.customServices : [],
@@ -151,12 +162,17 @@ export const CatalogConfigProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const applyServerOrders = useCallback((serverOrders: any) => {
     if (!Array.isArray(serverOrders)) return;
-    setOrders(serverOrders);
-    try {
-      localStorage.setItem(LOCAL_ORDERS_KEY, JSON.stringify(serverOrders));
-    } catch {
-      // ignore
-    }
+    setOrders((prev) => {
+      if (prev.length === serverOrders.length && JSON.stringify(prev[0]) === JSON.stringify(serverOrders[0])) {
+        return prev;
+      }
+      try {
+        localStorage.setItem(LOCAL_ORDERS_KEY, JSON.stringify(serverOrders));
+      } catch {
+        // ignore
+      }
+      return serverOrders;
+    });
   }, []);
 
   const persistAdminState = useCallback(
@@ -186,21 +202,88 @@ export const CatalogConfigProvider: React.FC<{ children: React.ReactNode }> = ({
     [applyServerConfig]
   );
 
-  // Initial fetch & WebSocket event listener (shared with SessionContext)
+  // Initial fetch, bidirectional reconciliation, active 3.5s cross-device cloud polling, and WebSocket event listener
   useEffect(() => {
-    const fetchInitial = async () => {
+    let isMounted = true;
+    let isFirstSync = true;
+
+    // Automatically push any locally stored IndexedDB PDFs to the cloud backend on startup
+    fetchAndSyncSavedPdfs().catch(() => {});
+
+    const fetchConfig = async () => {
       try {
         const res = await fetch('/api/admin-config');
-        if (res.ok) {
+        if (res.ok && isMounted) {
           const data = await res.json();
-          if (data.config) applyServerConfig(data.config);
+          if (data.config) {
+            if (isFirstSync) {
+              isFirstSync = false;
+              // Reconcile if this computer has previously saved custom packages or price overrides in localStorage
+              try {
+                const rawLocal = localStorage.getItem(LOCAL_CONFIG_KEY);
+                if (rawLocal) {
+                  const localParsed = JSON.parse(rawLocal);
+                  const localCustom: ServiceItem[] = Array.isArray(localParsed.customServices)
+                    ? localParsed.customServices
+                    : [];
+                  const serverCustom: ServiceItem[] = Array.isArray(data.config.customServices)
+                    ? data.config.customServices
+                    : [];
+                  const serverIds = new Set(serverCustom.map((s) => s.id));
+                  const missingFromServer = localCustom.filter((s) => s && s.id && !serverIds.has(s.id));
+
+                  const localOverrides = localParsed.serviceOverrides || {};
+                  const serverOverrides = data.config.serviceOverrides || {};
+                  const hasNewLocalOverrides =
+                    Object.keys(localOverrides).length > 0 && Object.keys(serverOverrides).length === 0;
+
+                  if (missingFromServer.length > 0 || hasNewLocalOverrides) {
+                    const reconciled: StoredAdminState = {
+                      serviceOverrides: { ...localOverrides, ...serverOverrides },
+                      customServices: [...missingFromServer, ...serverCustom],
+                      specialOfferOverrides: {
+                        ...(localParsed.specialOfferOverrides || {}),
+                        ...(data.config.specialOfferOverrides || {}),
+                      },
+                      diagnosticPriceOverrides: {
+                        ...(localParsed.diagnosticPriceOverrides || {}),
+                        ...(data.config.diagnosticPriceOverrides || {}),
+                      },
+                      paymentConfig: data.config.paymentConfig || localParsed.paymentConfig || DEFAULT_PAYMENT_CONFIG,
+                    };
+                    await persistAdminState(reconciled);
+                    if (Array.isArray(data.orders)) applyServerOrders(data.orders);
+                    return;
+                  }
+                }
+              } catch {
+                // ignore reconciliation error
+              }
+            }
+            applyServerConfig(data.config);
+          }
           if (Array.isArray(data.orders)) applyServerOrders(data.orders);
         }
       } catch {
-        // Offline fallback
+        // Offline or background network glitch fallback
       }
     };
-    fetchInitial();
+
+    // Immediate fetch on mount
+    fetchConfig();
+
+    // Active polling every 3.5 seconds so all laptops, computers, and mobile phones
+    // receive newly added packages, projects, and price edits automatically in real time
+    const pollInterval = window.setInterval(fetchConfig, 3500);
+
+    // Refresh immediately when user switches tabs or unlocks phone screen
+    const handleVisibilityOrFocus = () => {
+      if (document.visibilityState === 'visible') {
+        fetchConfig();
+      }
+    };
+    window.addEventListener('visibilitychange', handleVisibilityOrFocus);
+    window.addEventListener('focus', handleVisibilityOrFocus);
 
     const handleWsEvent = (e: Event) => {
       const msg = (e as CustomEvent).detail;
@@ -213,10 +296,15 @@ export const CatalogConfigProvider: React.FC<{ children: React.ReactNode }> = ({
     };
 
     window.addEventListener('growth-viral-ws-event', handleWsEvent);
+
     return () => {
+      isMounted = false;
+      window.clearInterval(pollInterval);
+      window.removeEventListener('visibilitychange', handleVisibilityOrFocus);
+      window.removeEventListener('focus', handleVisibilityOrFocus);
       window.removeEventListener('growth-viral-ws-event', handleWsEvent);
     };
-  }, [applyServerConfig, applyServerOrders]);
+  }, [applyServerConfig, applyServerOrders, persistAdminState]);
 
   // Compute allServicesAdmin (base services + overrides + custom services)
   const allServicesAdmin = useMemo<ServiceItem[]>(() => {
@@ -235,11 +323,15 @@ export const CatalogConfigProvider: React.FC<{ children: React.ReactNode }> = ({
 
     const customItems = (adminState.customServices || []).map((custom) => {
       const override = adminState.serviceOverrides[custom.id];
-      return {
+      const merged = {
         ...custom,
         ...(override || {}),
         isCustom: true,
       };
+      if (!merged.image || !merged.image.trim()) {
+        merged.image = DEFAULT_NETWORK_IMAGES[merged.network] || DEFAULT_NETWORK_IMAGES.instagram;
+      }
+      return merged;
     });
 
     return [...customItems, ...mergedBase];

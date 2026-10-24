@@ -95,9 +95,21 @@ export const ProductCard: React.FC<ProductCardProps> = React.memo(
     };
 
     const optimizedImg = useMemo(() => {
-      if (!service.image) return '';
-      return service.image.replace('w=800&q=80', 'w=480&q=75');
-    }, [service.image]);
+      const fallbackMap: Record<string, string> = {
+        facebook: 'https://images.unsplash.com/photo-1562577309-4932fdd64cd1?auto=format&fit=crop&w=480&q=75',
+        tiktok: 'https://images.unsplash.com/photo-1611605698335-8b1569810432?auto=format&fit=crop&w=480&q=75',
+        instagram: 'https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?auto=format&fit=crop&w=480&q=75',
+        youtube: 'https://images.unsplash.com/photo-1526778548025-fa2f459cd5c1?auto=format&fit=crop&w=480&q=75',
+        kick: 'https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=480&q=75',
+        spotify: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?auto=format&fit=crop&w=480&q=75',
+        special: 'https://images.unsplash.com/photo-1611162616305-c69b3fa7fbe0?auto=format&fit=crop&w=480&q=75',
+      };
+      const rawImg =
+        service.image && service.image.trim()
+          ? service.image.trim()
+          : fallbackMap[service.network] || fallbackMap.instagram;
+      return rawImg.replace('w=800&q=80', 'w=480&q=75');
+    }, [service.image, service.network]);
 
     return (
       <div

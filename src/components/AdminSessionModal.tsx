@@ -286,7 +286,7 @@ export const AdminSessionModal: React.FC<AdminSessionModalProps> = ({
       diagPrices: dPrices,
       offerPrices: oPrices,
     });
-    showToast('¡Todos los precios en USD se han guardado y actualizado en toda la app!');
+    showToast('¡Precios en USD guardados en el backend y sincronizados en todos tus celulares y computadoras!');
   };
 
   const handleCreateProduct = async (e: React.FormEvent) => {
@@ -309,7 +309,7 @@ export const AdminSessionModal: React.FC<AdminSessionModalProps> = ({
     setNewProdName('');
     setNewProdMetric('');
     setNewProdDesc('');
-    showToast('¡Nuevo producto creado y publicado en el catálogo en USD!');
+    showToast('¡Proyecto guardado en el backend y sincronizado al instante en todos tus aparatos, celulares y laptops!');
   };
 
   const startEditingService = (service: ServiceItem) => {

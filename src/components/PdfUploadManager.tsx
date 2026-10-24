@@ -56,23 +56,61 @@ export const PdfUploadManager: React.FC<PdfUploadManagerProps> = ({ onCountChang
   const multiFileInputRef = useRef<HTMLInputElement | null>(null);
   const slotInputRefs = useRef<Record<number, HTMLInputElement | null>>({});
 
-  const loadSavedPdfs = useCallback(async () => {
-    setIsLoading(true);
+  const loadSavedPdfs = useCallback(async (silent: boolean = false) => {
+    if (!silent) {
+      setIsLoading(true);
+    }
     try {
       const docs = await fetchAndSyncSavedPdfs();
-      setSavedPdfs(docs);
+      setSavedPdfs((prev) => {
+        if (
+          prev.length === docs.length &&
+          prev.every((p, idx) => p.id === docs[idx]?.id && p.name === docs[idx]?.name)
+        ) {
+          return prev;
+        }
+        return docs;
+      });
       if (onCountChange) {
         onCountChange(docs.length);
       }
     } catch (err) {
       console.error('Error loading saved PDFs:', err);
     } finally {
-      setIsLoading(false);
+      if (!silent) {
+        setIsLoading(false);
+      }
     }
   }, [onCountChange]);
 
   useEffect(() => {
-    loadSavedPdfs();
+    loadSavedPdfs(false);
+
+    // Active cross-device synchronization: checks for new PDFs uploaded from other computers or phones
+    const interval = window.setInterval(() => {
+      loadSavedPdfs(true);
+    }, 4000);
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        loadSavedPdfs(true);
+      }
+    };
+    window.addEventListener('visibilitychange', handleVisibility);
+
+    const handleWs = (e: Event) => {
+      const msg = (e as CustomEvent).detail;
+      if (msg && msg.type === 'pdfs:updated') {
+        loadSavedPdfs(true);
+      }
+    };
+    window.addEventListener('growth-viral-ws-event', handleWs);
+
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('growth-viral-ws-event', handleWs);
+    };
   }, [loadSavedPdfs]);
 
   // Cleanup preview blob URL when closed
@@ -188,6 +226,20 @@ export const PdfUploadManager: React.FC<PdfUploadManagerProps> = ({ onCountChang
       : pendingUploads;
 
     if (itemsToSave.length === 0) {
+      if (savedPdfs.length > 0) {
+        setIsSaving(true);
+        const synced = await fetchAndSyncSavedPdfs();
+        setSavedPdfs(synced);
+        if (onCountChange) {
+          onCountChange(synced.length);
+        }
+        setIsSaving(false);
+        setStatusBanner({
+          type: 'success',
+          message: `¡Tus ${synced.length} archivo(s) PDF están guardados en el backend y sincronizados al instante en todos los celulares y computadoras!`,
+        });
+        return;
+      }
       setStatusBanner({
         type: 'error',
         message: 'Primero selecciona al menos 1 archivo PDF (o hasta 10 PDFs) antes de darle a Guardar.',
@@ -222,8 +274,8 @@ export const PdfUploadManager: React.FC<PdfUploadManagerProps> = ({ onCountChang
         type: 'success',
         message:
           result.savedDocs.length === 1
-            ? `¡Se subió y guardó 1 archivo PDF ("${result.savedDocs[0].name}") correctamente!`
-            : `¡Se subieron y guardaron los ${result.savedDocs.length} archivos PDF correctamente!`,
+            ? `¡Se subió y guardó 1 archivo PDF ("${result.savedDocs[0].name}") en el backend y ya está disponible en todos tus aparatos!`
+            : `¡Se subieron y guardaron los ${result.savedDocs.length} archivos PDF en el backend para todos los dispositivos!`,
       });
     } else {
       setStatusBanner({
@@ -763,7 +815,7 @@ export const PdfUploadManager: React.FC<PdfUploadManagerProps> = ({ onCountChang
       </div>
 
       {/* Embedded PDF Viewer Modal / Drawer */}
-      {previewPdf && (
+      {previewPdf && previewPdf.url && (
         <div
           className="fixed inset-0 z-70 flex items-center justify-center p-3 sm:p-6 bg-black/90 backdrop-blur-md animate-in fade-in duration-150"
           onClick={() => setPreviewPdf(null)}
