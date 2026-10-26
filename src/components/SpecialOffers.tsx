@@ -1,8 +1,24 @@
 import React, { useState } from 'react';
-import { Flame, CheckCircle2, MessageCircle, ArrowRight, Plus, Minus, ShoppingBag, Check } from 'lucide-react';
+import {
+  Flame,
+  CheckCircle2,
+  MessageCircle,
+  ArrowRight,
+  Plus,
+  Minus,
+  ShoppingBag,
+  Check,
+  Image as ImageIcon,
+  DollarSign,
+  Upload,
+  Save,
+  X,
+} from 'lucide-react';
 import { buildWhatsAppLink } from '../data/catalogData';
 import { ServiceItem, SpecialPackage, DeliverySpeedMode } from '../types/catalog';
 import { useCatalogConfig } from '../context/CatalogConfigContext';
+import { useSession } from '../context/SessionContext';
+import { readAndCompressImageFile } from '../utils/globalCloudDatabase';
 
 interface SpecialOffersProps {
   onAddToCart: (service: ServiceItem, quantity?: number, deliverySpeed?: DeliverySpeedMode) => void;
@@ -12,13 +28,49 @@ interface SpecialOffersProps {
 
 export const SpecialOffers: React.FC<SpecialOffersProps> = React.memo(
   ({ onAddToCart, onOpenCart, cartCount = 0 }) => {
-    const { specialOffers, paymentConfig, recordOrder } = useCatalogConfig();
+    const { specialOffers, paymentConfig, recordOrder, updateSpecialOfferDetails } = useCatalogConfig();
+    const { isAdmin } = useSession();
     const [quantities, setQuantities] = useState<Record<string, number>>({});
     const [addedId, setAddedId] = useState<string | null>(null);
+    const [editingOfferId, setEditingOfferId] = useState<string | null>(null);
+    const [draftOfferPrice, setDraftOfferPrice] = useState<string>('');
+    const [draftOfferImage, setDraftOfferImage] = useState<string>('');
+    const [isSavingOffer, setIsSavingOffer] = useState(false);
 
     const getQty = (id: string) => quantities[id] || 1;
     const setQty = (id: string, next: number) =>
       setQuantities((prev) => ({ ...prev, [id]: Math.max(1, next) }));
+
+    const handleOfferImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      try {
+        const compressed = await readAndCompressImageFile(file);
+        setDraftOfferImage(compressed);
+      } catch {
+        // ignore
+      }
+      e.target.value = '';
+    };
+
+    const handleManualSaveOffer = async (offerId: string) => {
+      setIsSavingOffer(true);
+      try {
+        const trimmedPrice = draftOfferPrice.trim();
+        const nextPrice: number | 'consultar' =
+          !trimmedPrice || trimmedPrice.toLowerCase() === 'consultar' || Number.isNaN(Number(trimmedPrice))
+            ? 'consultar'
+            : Math.max(0, Number(trimmedPrice));
+        const patch: Partial<SpecialPackage> = { price: nextPrice };
+        if (draftOfferImage && draftOfferImage.trim()) {
+          patch.image = draftOfferImage.trim();
+        }
+        await updateSpecialOfferDetails(offerId, patch);
+        setEditingOfferId(null);
+      } finally {
+        setIsSavingOffer(false);
+      }
+    };
 
     const buildOfferWaUrl = (offer: SpecialPackage) => {
       const qty = getQty(offer.id);
@@ -95,7 +147,15 @@ export const SpecialOffers: React.FC<SpecialOffersProps> = React.memo(
             {specialOffers.map((offer) => {
               const qty = getQty(offer.id);
               const isJustAdded = addedId === offer.id;
+              const isEditingThis = editingOfferId === offer.id;
               const waUrl = buildOfferWaUrl(offer);
+              const displayImg =
+                isEditingThis && draftOfferImage && draftOfferImage.trim()
+                  ? draftOfferImage.trim()
+                  : (offer.image && offer.image.trim()
+                      ? offer.image.trim()
+                      : 'https://images.unsplash.com/photo-1611162616305-c69b3fa7fbe0?auto=format&fit=crop&w=480&q=75'
+                    ).replace('w=800&q=80', 'w=480&q=75');
 
               return (
                 <div
@@ -105,11 +165,7 @@ export const SpecialOffers: React.FC<SpecialOffersProps> = React.memo(
                   {/* Image */}
                   <div className="relative h-40 w-full overflow-hidden bg-zinc-950">
                     <img
-                      src={(
-                        offer.image && offer.image.trim()
-                          ? offer.image.trim()
-                          : 'https://images.unsplash.com/photo-1611162616305-c69b3fa7fbe0?auto=format&fit=crop&w=480&q=75'
-                      ).replace('w=800&q=80', 'w=480&q=75')}
+                      src={displayImg}
                       alt={offer.title}
                       loading="lazy"
                       decoding="async"
@@ -125,8 +181,74 @@ export const SpecialOffers: React.FC<SpecialOffersProps> = React.memo(
                       </span>
                     </div>
 
+                    {/* Admin Draft Editor Overlay (Manual "Guardar") */}
+                    {isAdmin && isEditingThis && (
+                      <div className="absolute inset-0 bg-zinc-950/95 p-3 flex flex-col justify-between z-10">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-black uppercase tracking-wider text-amber-400">
+                            Editar Imagen y Precio (Borrador)
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setEditingOfferId(null)}
+                            className="p-1 rounded-lg bg-zinc-800 text-zinc-400 hover:text-white cursor-pointer"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-1.5">
+                            <label className="px-2.5 py-1.5 rounded-lg bg-purple-600/30 hover:bg-purple-600/50 border border-purple-500/40 text-purple-200 text-[10px] font-bold flex items-center gap-1 shrink-0 cursor-pointer">
+                              <Upload className="w-3 h-3" />
+                              <span>Subir Foto</span>
+                              <input
+                                type="file"
+                                accept="image/*"
+                                onChange={handleOfferImageUpload}
+                                className="hidden"
+                              />
+                            </label>
+                            <input
+                              type="text"
+                              value={draftOfferImage}
+                              onChange={(e) => setDraftOfferImage(e.target.value)}
+                              placeholder="O pega URL de imagen..."
+                              className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1 text-[10px] text-white focus:outline-none"
+                            />
+                          </div>
+
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-1 bg-zinc-900 border border-emerald-500/60 rounded-lg px-2 py-1">
+                              <span className="text-xs font-black text-emerald-400">$</span>
+                              <input
+                                type="number"
+                                min="0"
+                                step="1"
+                                placeholder="Cotizar"
+                                value={draftOfferPrice}
+                                onChange={(e) => setDraftOfferPrice(e.target.value)}
+                                className="w-16 bg-transparent text-xs font-black text-white focus:outline-none"
+                              />
+                              <span className="text-[10px] text-zinc-400 font-bold">USD</span>
+                            </div>
+
+                            <button
+                              type="button"
+                              disabled={isSavingOffer}
+                              onClick={() => handleManualSaveOffer(offer.id)}
+                              className="flex-1 py-1.5 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-black flex items-center justify-center gap-1 shadow cursor-pointer"
+                            >
+                              <Save className="w-3.5 h-3.5" />
+                              <span>{isSavingOffer ? 'Guardando...' : 'Guardar'}</span>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
                     {/* Price Tag */}
-                    <div className="absolute bottom-3 right-3 bg-zinc-950/95 border border-zinc-700 px-3.5 py-1.5 rounded-2xl shadow">
+                    <div className="absolute bottom-3 right-3 bg-zinc-950/95 border border-zinc-700 px-3.5 py-1.5 rounded-2xl shadow flex items-center gap-1.5">
                       {typeof offer.price === 'number' ? (
                         <div className="flex items-baseline gap-1">
                           <span className="text-xs text-zinc-300 font-semibold">USD</span>
@@ -138,6 +260,21 @@ export const SpecialOffers: React.FC<SpecialOffersProps> = React.memo(
                         <span className="text-xs font-black text-amber-400 uppercase tracking-wide">
                           Cotizar
                         </span>
+                      )}
+                      {isAdmin && !isEditingThis && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDraftOfferPrice(offer.price === 'consultar' ? '' : String(offer.price));
+                            setDraftOfferImage(offer.image || '');
+                            setEditingOfferId(offer.id);
+                          }}
+                          className="ml-1 px-1.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/40 text-amber-300 border border-amber-500/30 transition cursor-pointer flex items-center gap-1 text-[10px] font-bold"
+                          title="Editar Imagen y Precio (Se guarda al pulsar Guardar)"
+                        >
+                          <ImageIcon className="w-3 h-3" />
+                          <DollarSign className="w-3 h-3 -ml-1" />
+                        </button>
                       )}
                     </div>
                   </div>

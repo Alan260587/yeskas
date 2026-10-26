@@ -95,12 +95,17 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
   }, []);
 
   const syncWithServer = useCallback(async () => {
+    if (!serverAvailableRef.current) return;
     try {
       const res = await fetch('/api/session/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sessionId }),
       });
+      if (res.status === 404 || res.status === 405) {
+        serverAvailableRef.current = false;
+        return;
+      }
       if (res.ok) {
         const data = await res.json();
         applyServerState(data);
@@ -151,7 +156,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     let isUnloading = false;
 
     const connectWs = () => {
-      if (isUnloading) return;
+      if (isUnloading || !serverAvailableRef.current) return;
       try {
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const wsUrl = `${protocol}//${window.location.host}/ws-session?sessionId=${encodeURIComponent(sessionId)}`;
@@ -176,8 +181,8 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
         };
 
         ws.onclose = () => {
-          if (!isUnloading) {
-            reconnectTimer = setTimeout(connectWs, 3500);
+          if (!isUnloading && serverAvailableRef.current) {
+            reconnectTimer = setTimeout(connectWs, 5000);
           }
         };
       } catch {
@@ -189,7 +194,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     // Heartbeat interval every 7 seconds
     const heartbeatInterval = setInterval(() => {
-      if (isUnloading) return;
+      if (isUnloading || !serverAvailableRef.current) return;
       if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
         try {
           wsRef.current.send(JSON.stringify({ type: 'session:heartbeat', sessionId }));
@@ -271,11 +276,19 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
     async (password: string): Promise<AdminLoginResult> => {
       const cleanPassword = password.trim();
       try {
+        if (!serverAvailableRef.current) {
+          throw new Error('Static host mode');
+        }
         const res = await fetch('/api/session/admin-login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ sessionId, password: cleanPassword }),
         });
+
+        if (res.status === 404 || res.status === 405) {
+          serverAvailableRef.current = false;
+          throw new Error('Static host 404');
+        }
 
         const data = await res.json();
         if (data.state) {
@@ -309,7 +322,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
           message: data.message || 'Contraseña incorrecta. Inténtalo de nuevo.',
         };
       } catch {
-        // Fallback if server endpoint unreachable
+        // Fallback if server endpoint unreachable (e.g., Vercel static deployment)
         if (activeAdminRef.current && activeAdminRef.current !== sessionId) {
           return {
             ok: false,

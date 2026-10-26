@@ -32,11 +32,15 @@ import {
   Copy,
   Package,
   Sparkles,
+  Image as ImageIcon,
+  Upload,
+  Globe,
 } from 'lucide-react';
 import { useSession } from '../context/SessionContext';
 import { useCatalogConfig } from '../context/CatalogConfigContext';
 import { NETWORK_INFO } from '../data/catalogData';
 import { SocialNetwork, OrderStatus, ServiceItem } from '../types/catalog';
+import { readAndCompressImageFile } from '../utils/globalCloudDatabase';
 
 interface AdminSessionModalProps {
   isOpen: boolean;
@@ -71,12 +75,11 @@ export const AdminSessionModal: React.FC<AdminSessionModalProps> = ({
     diagnosticPrices,
     paymentConfig,
     orders,
-    updateServicePrice,
     updateServiceDetails,
     toggleServiceHidden,
     createCustomService,
     deleteCustomService,
-    updateSpecialOfferPrice,
+    updateSpecialOfferDetails,
     updateDiagnosticPrice,
     saveBulkPrices,
     updatePaymentConfig,
@@ -84,6 +87,12 @@ export const AdminSessionModal: React.FC<AdminSessionModalProps> = ({
     updateOrderStatus,
     deleteOrder,
     clearOrders,
+    driveInfo,
+    connectGoogleDrive,
+    disconnectGoogleDrive,
+    syncNowToGoogleDrive,
+    restoreFromGoogleDrive,
+    requestDeleteGoogleDriveBackup,
   } = useCatalogConfig();
 
   // Login states
@@ -97,13 +106,15 @@ export const AdminSessionModal: React.FC<AdminSessionModalProps> = ({
   const [activeTab, setActiveTab] = useState<AdminTab>('prices');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  // Tab 1: Price Editor local drafts
+  // Tab 1: Price & Image Editor local drafts (Manual "Guardar" only!)
   const [priceSearch, setPriceSearch] = useState('');
   const [priceNetworkFilter, setPriceNetworkFilter] = useState<string>('all');
   const [priceSectionFilter, setPriceSectionFilter] = useState<'all' | 'catalog' | 'monetization' | 'offers'>('all');
   const [draftServicePrices, setDraftServicePrices] = useState<Record<string, string>>({});
+  const [draftServiceImages, setDraftServiceImages] = useState<Record<string, string>>({});
   const [draftDiagPrices, setDraftDiagPrices] = useState<Record<string, string>>({});
   const [draftOfferPrices, setDraftOfferPrices] = useState<Record<string, string>>({});
+  const [draftOfferImages, setDraftOfferImages] = useState<Record<string, string>>({});
 
   // Tab 2: Product Creator & Editor (#3)
   const [newProdNetwork, setNewProdNetwork] = useState<SocialNetwork>('instagram');
@@ -114,6 +125,7 @@ export const AdminSessionModal: React.FC<AdminSessionModalProps> = ({
   const [newProdTag, setNewProdTag] = useState('Nuevo');
   const [newProdDelivery, setNewProdDelivery] = useState('48 a 72 horas');
   const [newProdPopular, setNewProdPopular] = useState(true);
+  const [newProdImage, setNewProdImage] = useState('');
   const [editingServiceId, setEditingServiceId] = useState<string | null>(null);
   const [editServiceDraft, setEditServiceDraft] = useState<{
     name: string;
@@ -122,6 +134,7 @@ export const AdminSessionModal: React.FC<AdminSessionModalProps> = ({
     description: string;
     tag: string;
     deliveryTime: string;
+    image: string;
   }>({
     name: '',
     metric: '',
@@ -129,6 +142,7 @@ export const AdminSessionModal: React.FC<AdminSessionModalProps> = ({
     description: '',
     tag: '',
     deliveryTime: '48 a 72 horas',
+    image: '',
   });
 
   // Tab 3: Payment & WhatsApp Editor (#8)
@@ -148,7 +162,7 @@ export const AdminSessionModal: React.FC<AdminSessionModalProps> = ({
     setToastMessage(msg);
     setTimeout(() => {
       setToastMessage((prev) => (prev === msg ? null : prev));
-    }, 3000);
+    }, 3500);
   };
 
   // Sync draft prices when catalog data changes
@@ -283,10 +297,14 @@ export const AdminSessionModal: React.FC<AdminSessionModalProps> = ({
 
     await saveBulkPrices({
       servicePrices: sPrices,
+      serviceImages: draftServiceImages,
       diagPrices: dPrices,
       offerPrices: oPrices,
+      offerImages: draftOfferImages,
     });
-    showToast('¡Precios en USD guardados en el backend y sincronizados en todos tus celulares y computadoras!');
+    setDraftServiceImages({});
+    setDraftOfferImages({});
+    showToast('¡Precios e imágenes guardados en la Base de Datos en la Nube Global y replicados al instante en todos los países e IPs!');
   };
 
   const handleCreateProduct = async (e: React.FormEvent) => {
@@ -305,11 +323,13 @@ export const AdminSessionModal: React.FC<AdminSessionModalProps> = ({
       tag: newProdTag,
       popular: newProdPopular,
       deliveryTime: newProdDelivery,
+      image: newProdImage.trim() || undefined,
     });
     setNewProdName('');
     setNewProdMetric('');
     setNewProdDesc('');
-    showToast('¡Proyecto guardado en el backend y sincronizado al instante en todos tus aparatos, celulares y laptops!');
+    setNewProdImage('');
+    showToast('¡Nuevo proyecto e imagen guardados en la Base de Datos en la Nube Global y sincronizados en todos los países, celulares y laptops!');
   };
 
   const startEditingService = (service: ServiceItem) => {
@@ -321,21 +341,26 @@ export const AdminSessionModal: React.FC<AdminSessionModalProps> = ({
       description: service.description,
       tag: service.tag || '',
       deliveryTime: service.deliveryTime || '48 a 72 horas',
+      image: service.image || '',
     });
   };
 
   const saveEditedService = async (id: string) => {
     const priceNum = Math.max(0, Number(editServiceDraft.price) || 0);
-    await updateServiceDetails(id, {
+    const patch: Partial<ServiceItem> = {
       name: editServiceDraft.name.trim() || 'Servicio',
       metric: editServiceDraft.metric.trim() || '1K',
       price: priceNum,
       description: editServiceDraft.description.trim(),
       tag: editServiceDraft.tag.trim(),
       deliveryTime: editServiceDraft.deliveryTime,
-    });
+    };
+    if (editServiceDraft.image && editServiceDraft.image.trim()) {
+      patch.image = editServiceDraft.image.trim();
+    }
+    await updateServiceDetails(id, patch);
     setEditingServiceId(null);
-    showToast('Producto actualizado correctamente.');
+    showToast('¡Producto, imagen y precio guardados en la nube global al instante!');
   };
 
   const handleSavePaymentConfig = async (e: React.FormEvent) => {
@@ -689,19 +714,180 @@ export const AdminSessionModal: React.FC<AdminSessionModalProps> = ({
           )}
 
           {/* =============================================================== */}
-          {/* TAB 1: ADMIN PRICE EDITOR IN USD (BASE PROPOSAL A)              */}
+          {/* GOOGLE DRIVE + NEON & TURSO CLOUD SYNC BAR (ALL ADMIN TABS)     */}
+          {/* =============================================================== */}
+          {isAdmin && (
+            <div className="bg-gradient-to-r from-blue-950/40 via-zinc-900/95 to-emerald-950/30 border border-blue-500/35 rounded-2xl p-4 space-y-3">
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-500/20 text-blue-300 border border-blue-500/40 text-[11px] font-black">
+                      <Globe className="w-3.5 h-3.5 text-blue-400" />
+                      Google Drive + Neon &amp; Turso Cloud Sync
+                    </span>
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 text-[10px] font-extrabold">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                      Replicación Inmediata en Todos los Aparatos e IPs
+                    </span>
+                  </div>
+                  <p className="text-xs text-zinc-300 leading-relaxed">
+                    Guarda tus <strong>imágenes, productos, catálogos y ediciones de precios</strong> directamente en tu <strong>Google Drive</strong> y replícalos al instante en <strong>Neon + Turso Edge</strong> para que cualquier celular, laptop o país vea los cambios en el acto.
+                  </p>
+                  {driveInfo.userEmail && (
+                    <div className="flex items-center gap-2 flex-wrap pt-0.5 text-[11px]">
+                      <span className="text-emerald-300 font-bold">
+                        ✓ Cuenta Google conectada: <span className="underline">{driveInfo.userEmail}</span>
+                      </span>
+                      {driveInfo.lastSyncedAt && (
+                        <span className="text-zinc-400">
+                          • Último guardado en Drive:{' '}
+                          {new Date(driveInfo.lastSyncedAt).toLocaleTimeString()}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                  {driveInfo.error && (
+                    <p className="text-xs text-rose-400 font-bold pt-0.5">
+                      ⚠️ {driveInfo.error}
+                    </p>
+                  )}
+                </div>
+
+                {/* Official Google Sign-In / Drive Controls */}
+                <div className="flex flex-wrap items-center gap-2 shrink-0">
+                  {!driveInfo.hasToken ? (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          await connectGoogleDrive();
+                          showToast(
+                            '¡Google Drive conectado y sincronizado con Neon/Turso Global para todos los dispositivos!'
+                          );
+                        } catch {
+                          // Error shown in driveInfo.error
+                        }
+                      }}
+                      disabled={driveInfo.isSyncing}
+                      className="flex items-center gap-2.5 px-4 py-2.5 rounded-xl bg-white hover:bg-zinc-100 text-zinc-900 font-extrabold text-xs shadow-lg transition cursor-pointer disabled:opacity-60 border border-zinc-300"
+                    >
+                      <svg
+                        version="1.1"
+                        xmlns="http://www.w3.org/2000/svg"
+                        viewBox="0 0 48 48"
+                        className="w-4 h-4 shrink-0"
+                      >
+                        <path
+                          fill="#EA4335"
+                          d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"
+                        />
+                        <path
+                          fill="#4285F4"
+                          d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"
+                        />
+                        <path
+                          fill="#FBBC05"
+                          d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"
+                        />
+                        <path
+                          fill="#34A853"
+                          d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"
+                        />
+                      </svg>
+                      <span>
+                        {driveInfo.isSyncing
+                          ? 'Conectando Google Drive...'
+                          : 'Sign in with Google (Conectar mi Google Drive)'}
+                      </span>
+                    </button>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        onClick={syncNowToGoogleDrive}
+                        disabled={driveInfo.isSyncing}
+                        className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-black text-xs shadow-lg shadow-blue-950/50 transition cursor-pointer disabled:opacity-50"
+                      >
+                        <Save className="w-3.5 h-3.5" />
+                        <span>
+                          {driveInfo.isSyncing
+                            ? 'Sincronizando Drive...'
+                            : 'Guardar en mi Google Drive'}
+                        </span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          await restoreFromGoogleDrive();
+                          showToast(
+                            '¡Catálogo, imágenes y precios cargados desde tu Google Drive y replicados a todos los aparatos!'
+                          );
+                        }}
+                        disabled={driveInfo.isSyncing}
+                        className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-cyan-300 border border-cyan-500/30 font-bold text-xs transition cursor-pointer disabled:opacity-50"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        <span>Cargar desde Drive</span>
+                      </button>
+
+                      {driveInfo.driveWebViewLink && (
+                        <a
+                          href={driveInfo.driveWebViewLink}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 font-bold text-xs transition"
+                        >
+                          <FileText className="w-3.5 h-3.5" />
+                          <span>Ver en mi Drive</span>
+                        </a>
+                      )}
+
+                      {driveInfo.driveFileId && (
+                        <button
+                          type="button"
+                          onClick={requestDeleteGoogleDriveBackup}
+                          disabled={driveInfo.isSyncing}
+                          className="flex items-center gap-1 px-2.5 py-2 rounded-xl bg-rose-600/15 hover:bg-rose-600/25 text-rose-300 border border-rose-500/30 font-bold text-xs transition cursor-pointer"
+                          title="Eliminar archivo de respaldo en Google Drive"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={disconnectGoogleDrive}
+                        className="flex items-center gap-1 px-2.5 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-white font-bold text-xs border border-zinc-700 transition cursor-pointer"
+                        title="Desconectar cuenta de Google Drive"
+                      >
+                        <LogOut className="w-3.5 h-3.5" />
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* =============================================================== */}
+          {/* TAB 1: ADMIN PRICE & IMAGE EDITOR IN USD (MANUAL SAVE)          */}
           {/* =============================================================== */}
           {isAdmin && activeTab === 'prices' && (
             <div className="space-y-5">
               {/* Top Action Bar */}
               <div className="bg-gradient-to-r from-emerald-950/40 via-zinc-900 to-zinc-900 border border-emerald-500/30 rounded-2xl p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                 <div>
-                  <h4 className="text-sm sm:text-base font-black text-white flex items-center gap-2">
+                  <h4 className="text-sm sm:text-base font-black text-white flex items-center gap-2 flex-wrap">
                     <DollarSign className="w-5 h-5 text-emerald-400" />
-                    <span>Editor General de Precios en USD ($ Dólares)</span>
+                    <span>Editor Manual de Precios (USD) e Imágenes</span>
+                    <span className="inline-flex items-center gap-1 text-[10px] px-2.5 py-0.5 rounded-full bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 font-extrabold">
+                      <Globe className="w-3 h-3" />
+                      Nube Global Multi-Región Gratis (Sin Registro)
+                    </span>
                   </h4>
-                  <p className="text-xs text-zinc-300 mt-0.5">
-                    Aquí salen <strong>todos los productos, paquetes de monetización y ofertas especiales</strong> con su red social y métrica. Modifica cualquier precio en USD y pulsa guardar.
+                  <p className="text-xs text-zinc-300 mt-1">
+                    Cambia cualquier <strong>imagen o precio en USD</strong> en modo borrador (no se guarda solo mientras escribes o eliges foto). Al pulsar <strong>"Guardar"</strong>, se replica de forma <strong>automática, gratuita e inmediata</strong> en todos los países, estados e IPs.
                   </p>
                 </div>
 
@@ -711,12 +897,14 @@ export const AdminSessionModal: React.FC<AdminSessionModalProps> = ({
                     className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs shadow-lg shadow-emerald-950/50 transition cursor-pointer"
                   >
                     <Save className="w-4 h-4" />
-                    <span>Guardar Todos los Precios (USD)</span>
+                    <span>Guardar Todos los Precios e Imágenes</span>
                   </button>
                   <button
                     onClick={async () => {
                       await resetAllToDefaults();
-                      showToast('Se restauraron todos los precios originales en USD.');
+                      setDraftServiceImages({});
+                      setDraftOfferImages({});
+                      showToast('Se restauraron todos los precios e imágenes originales.');
                     }}
                     className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white font-bold text-xs border border-zinc-700 transition cursor-pointer"
                   >
@@ -731,13 +919,13 @@ export const AdminSessionModal: React.FC<AdminSessionModalProps> = ({
                 <div className="flex items-center gap-2.5">
                   <Zap className="w-4 h-4 text-amber-400 shrink-0" />
                   <span>
-                    <strong className="text-white">Ritmo y Velocidad de Entrega Activo en toda la App:</strong>{' '}
-                    <span className="text-amber-300 font-bold">Modo Express: 48 a 72 horas</span> •{' '}
-                    <span className="text-emerald-300 font-bold">Modo Progresivo: 7 días en adelante</span>
+                    <strong className="text-white">Guardado Manual Activado:</strong>{' '}
+                    <span className="text-amber-300 font-bold">1. Edita precio o sube foto</span> •{' '}
+                    <span className="text-emerald-300 font-bold">2. Pulsa "Guardar" para replicar en la nube global</span>
                   </span>
                 </div>
                 <span className="text-[10px] px-2.5 py-1 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-bold self-start sm:self-auto">
-                  Sincronizado en Tiempo Real
+                  Replicación Global Activa (&lt;40ms)
                 </span>
               </div>
 
@@ -788,20 +976,32 @@ export const AdminSessionModal: React.FC<AdminSessionModalProps> = ({
                       <Package className="w-4 h-4 text-purple-400" />
                       <span>Productos y Servicios del Catálogo ({filteredCatalogServices.length})</span>
                     </h5>
-                    <span className="text-[11px] text-zinc-400">Moneda: USD ($)</span>
+                    <span className="text-[11px] text-zinc-400">Imagen + Precio en USD ($)</span>
                   </div>
 
                   <div className="bg-zinc-900/60 border border-zinc-800 rounded-2xl divide-y divide-zinc-800/80 overflow-hidden">
                     {filteredCatalogServices.map((service) => {
                       const netInfo = NETWORK_INFO[service.network] || NETWORK_INFO.instagram;
                       const draftVal = draftServicePrices[service.id] ?? String(service.price);
+                      const draftImg = draftServiceImages[service.id];
+                      const previewImg =
+                        (draftImg && draftImg.trim()) ||
+                        (service.image && service.image.trim()) ||
+                        'https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?auto=format&fit=crop&w=240&q=70';
+                      const hasUnsavedChanges =
+                        Number(draftVal) !== service.price || Boolean(draftImg && draftImg !== service.image);
 
                       return (
                         <div
                           key={service.id}
-                          className="p-3 sm:px-4 sm:py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-zinc-900/90 transition"
+                          className="p-3 sm:px-4 sm:py-3 flex flex-col lg:flex-row lg:items-center justify-between gap-3 hover:bg-zinc-900/90 transition"
                         >
                           <div className="flex items-start sm:items-center gap-3">
+                            <img
+                              src={previewImg}
+                              alt={service.name}
+                              className="w-12 h-12 rounded-xl object-cover border border-zinc-700 shrink-0 bg-zinc-950"
+                            />
                             <span
                               className={`text-[10px] font-black px-2.5 py-1 rounded-lg uppercase tracking-wider shrink-0 ${netInfo.badgeColor}`}
                             >
@@ -818,9 +1018,9 @@ export const AdminSessionModal: React.FC<AdminSessionModalProps> = ({
                                     Creado por Admin
                                   </span>
                                 )}
-                                {service.hidden && (
-                                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/30 font-bold">
-                                    Oculto
+                                {hasUnsavedChanges && (
+                                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/25 text-amber-300 border border-amber-500/50 font-black">
+                                    ● Pendiente de Guardar
                                   </span>
                                 )}
                               </div>
@@ -830,7 +1030,32 @@ export const AdminSessionModal: React.FC<AdminSessionModalProps> = ({
                             </div>
                           </div>
 
-                          <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
+                          <div className="flex flex-wrap items-center gap-2 self-end lg:self-auto shrink-0">
+                            <label className="px-2.5 py-2 rounded-xl bg-purple-600/20 hover:bg-purple-600/35 text-purple-200 border border-purple-500/40 text-xs font-bold transition cursor-pointer flex items-center gap-1.5">
+                              <Upload className="w-3.5 h-3.5 text-purple-300" />
+                              <span>Subir Foto</span>
+                              <input
+                                type="file"
+                                accept="image/*"
+                                className="hidden"
+                                onChange={async (e) => {
+                                  const file = e.target.files?.[0];
+                                  if (!file) return;
+                                  try {
+                                    const compressed = await readAndCompressImageFile(file);
+                                    setDraftServiceImages((prev) => ({
+                                      ...prev,
+                                      [service.id]: compressed,
+                                    }));
+                                    showToast(`Foto cargada en borrador para "${service.name}". Pulsa "Guardar" para confirmar.`);
+                                  } catch {
+                                    // ignore
+                                  }
+                                  e.target.value = '';
+                                }}
+                              />
+                            </label>
+
                             <div className="flex items-center bg-zinc-950 border border-zinc-700 focus-within:border-emerald-500 rounded-xl px-2.5 py-1.5">
                               <span className="text-xs font-black text-emerald-400 mr-1">$</span>
                               <input
@@ -852,13 +1077,26 @@ export const AdminSessionModal: React.FC<AdminSessionModalProps> = ({
                             <button
                               onClick={async () => {
                                 const num = Math.max(0, Number(draftVal) || 0);
-                                await updateServicePrice(service.id, num);
-                                showToast(`Precio actualizado: ${service.name} -> $${num} USD`);
+                                const patch: Partial<ServiceItem> = { price: num };
+                                if (draftImg && draftImg.trim()) {
+                                  patch.image = draftImg.trim();
+                                }
+                                await updateServiceDetails(service.id, patch);
+                                setDraftServiceImages((prev) => {
+                                  const next = { ...prev };
+                                  delete next[service.id];
+                                  return next;
+                                });
+                                showToast(`¡Guardado en nube global: ${service.name} -> $${num} USD!`);
                               }}
-                              className="px-3 py-2 rounded-xl bg-emerald-600/20 hover:bg-emerald-600 text-emerald-300 hover:text-white border border-emerald-500/40 text-xs font-bold transition cursor-pointer flex items-center gap-1"
-                              title="Guardar este precio en USD"
+                              className={`px-3.5 py-2 rounded-xl text-xs font-black transition cursor-pointer flex items-center gap-1 ${
+                                hasUnsavedChanges
+                                  ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-950/50'
+                                  : 'bg-emerald-600/20 hover:bg-emerald-600 text-emerald-300 hover:text-white border border-emerald-500/40'
+                              }`}
+                              title="Guardar imagen y precio en la nube global"
                             >
-                              <Check className="w-3.5 h-3.5" />
+                              <Save className="w-3.5 h-3.5" />
                               <span>Guardar</span>
                             </button>
                           </div>
@@ -930,11 +1168,11 @@ export const AdminSessionModal: React.FC<AdminSessionModalProps> = ({
                               onClick={async () => {
                                 const num = Math.max(0, Number(draftVal) || 0);
                                 await updateDiagnosticPrice(pkg.id, num);
-                                showToast(`Paquete de monetización actualizado: $${num} USD`);
+                                showToast(`¡Guardado en nube global: ${pkg.name} -> $${num} USD!`);
                               }}
                               className="px-3 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500 text-amber-300 hover:text-zinc-950 border border-amber-500/40 text-xs font-bold transition cursor-pointer flex items-center gap-1"
                             >
-                              <Check className="w-3.5 h-3.5" />
+                              <Save className="w-3.5 h-3.5" />
                               <span>Guardar</span>
                             </button>
                           </div>
@@ -953,29 +1191,72 @@ export const AdminSessionModal: React.FC<AdminSessionModalProps> = ({
                       <span>🔥 Ofertas Especiales "Solo por Hoy" ({specialOffers.length})</span>
                     </h5>
                     <span className="text-[11px] text-zinc-400">
-                      Deja vacío para mostrar "Cotizar" o escribe monto en USD
+                      Sube foto o escribe monto en USD y pulsa "Guardar"
                     </span>
                   </div>
 
                   <div className="bg-zinc-900/60 border border-zinc-800 rounded-2xl divide-y divide-zinc-800/80 overflow-hidden">
                     {specialOffers.map((offer) => {
                       const draftVal = draftOfferPrices[offer.id] ?? '';
+                      const draftImg = draftOfferImages[offer.id];
+                      const previewImg =
+                        (draftImg && draftImg.trim()) ||
+                        (offer.image && offer.image.trim()) ||
+                        'https://images.unsplash.com/photo-1611162616305-c69b3fa7fbe0?auto=format&fit=crop&w=240&q=70';
+
                       return (
                         <div
                           key={offer.id}
-                          className="p-3 sm:px-4 sm:py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                          className="p-3 sm:px-4 sm:py-3 flex flex-col lg:flex-row lg:items-center justify-between gap-3"
                         >
-                          <div>
-                            <div className="text-xs sm:text-sm font-bold text-white flex items-center gap-2">
-                              <span>{offer.title}</span>
-                              <span className="text-[10px] px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/30 font-bold">
-                                {offer.subtitle}
-                              </span>
+                          <div className="flex items-center gap-3">
+                            <img
+                              src={previewImg}
+                              alt={offer.title}
+                              className="w-12 h-12 rounded-xl object-cover border border-zinc-700 shrink-0 bg-zinc-950"
+                            />
+                            <div>
+                              <div className="text-xs sm:text-sm font-bold text-white flex items-center gap-2 flex-wrap">
+                                <span>{offer.title}</span>
+                                <span className="text-[10px] px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/30 font-bold">
+                                  {offer.subtitle}
+                                </span>
+                                {draftImg && (
+                                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/25 text-amber-300 border border-amber-500/50 font-black">
+                                    ● Foto en borrador (Pulsa Guardar)
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-[11px] text-zinc-400 mt-0.5">{offer.description}</p>
                             </div>
-                            <p className="text-[11px] text-zinc-400 mt-0.5">{offer.description}</p>
                           </div>
 
-                          <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
+                          <div className="flex flex-wrap items-center gap-2 self-end lg:self-auto shrink-0">
+                            <label className="px-2.5 py-2 rounded-xl bg-purple-600/20 hover:bg-purple-600/35 text-purple-200 border border-purple-500/40 text-xs font-bold transition cursor-pointer flex items-center gap-1.5">
+                              <Upload className="w-3.5 h-3.5 text-purple-300" />
+                              <span>Subir Foto</span>
+                              <input
+                                type="file"
+                                accept="image/*"
+                                className="hidden"
+                                onChange={async (e) => {
+                                  const file = e.target.files?.[0];
+                                  if (!file) return;
+                                  try {
+                                    const compressed = await readAndCompressImageFile(file);
+                                    setDraftOfferImages((prev) => ({
+                                      ...prev,
+                                      [offer.id]: compressed,
+                                    }));
+                                    showToast(`Foto cargada en borrador para "${offer.title}". Pulsa "Guardar" para confirmar.`);
+                                  } catch {
+                                    // ignore
+                                  }
+                                  e.target.value = '';
+                                }}
+                              />
+                            </label>
+
                             <div className="flex items-center bg-zinc-950 border border-zinc-700 rounded-xl px-2.5 py-1.5">
                               <span className="text-xs font-black text-emerald-400 mr-1">$</span>
                               <input
@@ -998,20 +1279,27 @@ export const AdminSessionModal: React.FC<AdminSessionModalProps> = ({
                             <button
                               onClick={async () => {
                                 const trimmed = String(draftVal).trim();
-                                const nextPrice =
+                                const nextPrice: number | 'consultar' =
                                   !trimmed || Number.isNaN(Number(trimmed))
                                     ? 'consultar'
                                     : Math.max(0, Number(trimmed));
-                                await updateSpecialOfferPrice(offer.id, nextPrice);
+                                const patch: any = { price: nextPrice };
+                                if (draftImg && draftImg.trim()) {
+                                  patch.image = draftImg.trim();
+                                }
+                                await updateSpecialOfferDetails(offer.id, patch);
+                                setDraftOfferImages((prev) => {
+                                  const next = { ...prev };
+                                  delete next[offer.id];
+                                  return next;
+                                });
                                 showToast(
-                                  `Oferta "${offer.title}" actualizada a ${
-                                    nextPrice === 'consultar' ? 'Cotizar' : `$${nextPrice} USD`
-                                  }`
+                                  `¡Oferta "${offer.title}" guardada en la nube global!`
                                 );
                               }}
-                              className="px-3 py-2 rounded-xl bg-emerald-600/20 hover:bg-emerald-600 text-emerald-300 hover:text-white border border-emerald-500/40 text-xs font-bold transition cursor-pointer flex items-center gap-1"
+                              className="px-3.5 py-2 rounded-xl bg-emerald-600/20 hover:bg-emerald-600 text-emerald-300 hover:text-white border border-emerald-500/40 text-xs font-bold transition cursor-pointer flex items-center gap-1"
                             >
-                              <Check className="w-3.5 h-3.5" />
+                              <Save className="w-3.5 h-3.5" />
                               <span>Guardar</span>
                             </button>
                           </div>
@@ -1034,14 +1322,14 @@ export const AdminSessionModal: React.FC<AdminSessionModalProps> = ({
                 onSubmit={handleCreateProduct}
                 className="bg-zinc-900/80 border border-purple-500/30 rounded-2xl p-4 sm:p-5 space-y-4"
               >
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between flex-wrap gap-2">
                   <div>
                     <h4 className="text-sm sm:text-base font-black text-white flex items-center gap-2">
                       <PlusCircle className="w-5 h-5 text-purple-400" />
-                      <span>Crear Nuevo Producto o Paquete en el Catálogo (Propuesta #3)</span>
+                      <span>Crear Nuevo Proyecto, Catálogo o Paquete (Propuesta #3)</span>
                     </h4>
                     <p className="text-xs text-zinc-400 mt-0.5">
-                      Agrega cualquier servicio o combo nuevo con su precio en USD y velocidad de entrega.
+                      Configura el nombre, precio en USD e imagen en borrador. Solo se guardará cuando pulses el botón <strong>"Guardar y Publicar"</strong>.
                     </p>
                   </div>
                 </div>
@@ -1067,7 +1355,7 @@ export const AdminSessionModal: React.FC<AdminSessionModalProps> = ({
 
                   <div>
                     <label className="block text-[11px] font-bold text-zinc-300 mb-1">
-                      Nombre del Producto / Paquete:
+                      Nombre del Producto / Proyecto:
                     </label>
                     <input
                       type="text"
@@ -1138,6 +1426,68 @@ export const AdminSessionModal: React.FC<AdminSessionModalProps> = ({
                   </div>
                 </div>
 
+                {/* Image Upload / URL Draft Selector for New Project */}
+                <div className="bg-zinc-950/90 border border-zinc-800 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-3 flex-1">
+                    {newProdImage ? (
+                      <img
+                        src={newProdImage}
+                        alt="Vista previa"
+                        className="w-12 h-12 rounded-xl object-cover border border-purple-500/50 shrink-0"
+                      />
+                    ) : (
+                      <div className="w-12 h-12 rounded-xl bg-zinc-900 border border-zinc-800 flex items-center justify-center text-zinc-500 shrink-0">
+                        <ImageIcon className="w-5 h-5" />
+                      </div>
+                    )}
+                    <div className="flex-1 space-y-1">
+                      <label className="block text-[11px] font-bold text-zinc-300">
+                        Imagen del Proyecto / Paquete (Opcional — Se guarda al pulsar "Guardar y Publicar"):
+                      </label>
+                      <input
+                        type="text"
+                        value={newProdImage}
+                        onChange={(e) => setNewProdImage(e.target.value)}
+                        placeholder="Pega enlace URL de imagen o usa el botón 'Subir Foto'..."
+                        className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-2.5 py-1.5 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-purple-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
+                    <label className="px-3 py-2 rounded-xl bg-purple-600/25 hover:bg-purple-600/40 text-purple-200 border border-purple-500/40 text-xs font-bold flex items-center gap-1.5 cursor-pointer">
+                      <Upload className="w-3.5 h-3.5" />
+                      <span>Subir Foto desde PC / Celular</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          try {
+                            const compressed = await readAndCompressImageFile(file);
+                            setNewProdImage(compressed);
+                            showToast('Imagen lista en borrador. Pulsa "Guardar y Publicar" para guardarla en la nube global.');
+                          } catch {
+                            // ignore
+                          }
+                          e.target.value = '';
+                        }}
+                      />
+                    </label>
+                    {newProdImage && (
+                      <button
+                        type="button"
+                        onClick={() => setNewProdImage('')}
+                        className="px-2.5 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-bold cursor-pointer"
+                      >
+                        Quitar
+                      </button>
+                    )}
+                  </div>
+                </div>
+
                 <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
                   <div className="flex items-center gap-4">
                     <label className="flex items-center gap-2 text-xs text-zinc-300 cursor-pointer">
@@ -1160,10 +1510,10 @@ export const AdminSessionModal: React.FC<AdminSessionModalProps> = ({
 
                   <button
                     type="submit"
-                    className="px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-black text-xs shadow-lg shadow-purple-950/50 transition flex items-center gap-2 cursor-pointer"
+                    className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs shadow-lg shadow-emerald-950/50 transition flex items-center gap-2 cursor-pointer"
                   >
-                    <PlusCircle className="w-4 h-4" />
-                    <span>Publicar Producto en el Catálogo</span>
+                    <Save className="w-4 h-4" />
+                    <span>Guardar y Publicar en Nube Global</span>
                   </button>
                 </div>
               </form>
@@ -1172,10 +1522,10 @@ export const AdminSessionModal: React.FC<AdminSessionModalProps> = ({
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <h5 className="text-xs font-black uppercase tracking-wider text-zinc-300">
-                    Gestionar, Editar u Ocultar Productos Existentes ({allServicesAdmin.length})
+                    Gestionar, Editar Imagen/Precio u Ocultar Productos Existentes ({allServicesAdmin.length})
                   </h5>
                   <span className="text-[11px] text-zinc-400">
-                    Puedes editar nombre, métrica, precio USD o pausar cualquier servicio
+                    Los cambios se mantienen en borrador hasta pulsar "Guardar Cambios"
                   </span>
                 </div>
 
@@ -1251,6 +1601,54 @@ export const AdminSessionModal: React.FC<AdminSessionModalProps> = ({
                               </select>
                             </div>
 
+                            {/* Draft Image Editor inside Edit Row */}
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-zinc-900/90 border border-zinc-800 rounded-lg p-2">
+                              <div className="flex items-center gap-2.5 flex-1">
+                                {editServiceDraft.image && (
+                                  <img
+                                    src={editServiceDraft.image}
+                                    alt={editServiceDraft.name}
+                                    className="w-10 h-10 rounded-lg object-cover border border-zinc-700 shrink-0"
+                                  />
+                                )}
+                                <input
+                                  type="text"
+                                  value={editServiceDraft.image}
+                                  onChange={(e) =>
+                                    setEditServiceDraft((prev) => ({
+                                      ...prev,
+                                      image: e.target.value,
+                                    }))
+                                  }
+                                  placeholder="URL de la imagen o sube una foto..."
+                                  className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-2.5 py-1 text-xs text-white"
+                                />
+                              </div>
+                              <label className="px-2.5 py-1.5 rounded-lg bg-purple-600/25 hover:bg-purple-600/40 text-purple-200 border border-purple-500/40 text-xs font-bold flex items-center gap-1.5 shrink-0 cursor-pointer">
+                                <Upload className="w-3.5 h-3.5" />
+                                <span>Subir Foto</span>
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  className="hidden"
+                                  onChange={async (e) => {
+                                    const file = e.target.files?.[0];
+                                    if (!file) return;
+                                    try {
+                                      const compressed = await readAndCompressImageFile(file);
+                                      setEditServiceDraft((prev) => ({
+                                        ...prev,
+                                        image: compressed,
+                                      }));
+                                    } catch {
+                                      // ignore
+                                    }
+                                    e.target.value = '';
+                                  }}
+                                />
+                              </label>
+                            </div>
+
                             <div className="flex justify-end gap-2">
                               <button
                                 type="button"
@@ -1262,9 +1660,9 @@ export const AdminSessionModal: React.FC<AdminSessionModalProps> = ({
                               <button
                                 type="button"
                                 onClick={() => saveEditedService(service.id)}
-                                className="px-3.5 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-black cursor-pointer flex items-center gap-1"
+                                className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black cursor-pointer flex items-center gap-1"
                               >
-                                <Check className="w-3.5 h-3.5" />
+                                <Save className="w-3.5 h-3.5" />
                                 <span>Guardar Cambios</span>
                               </button>
                             </div>
@@ -1272,6 +1670,13 @@ export const AdminSessionModal: React.FC<AdminSessionModalProps> = ({
                         ) : (
                           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                             <div className="flex items-center gap-2.5">
+                              {service.image && (
+                                <img
+                                  src={service.image}
+                                  alt={service.name}
+                                  className="w-9 h-9 rounded-lg object-cover border border-zinc-800 shrink-0"
+                                />
+                              )}
                               <span
                                 className={`text-[10px] font-black px-2 py-0.5 rounded uppercase ${netInfo.badgeColor}`}
                               >
@@ -1299,7 +1704,7 @@ export const AdminSessionModal: React.FC<AdminSessionModalProps> = ({
                                 className="px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-[11px] font-bold flex items-center gap-1 cursor-pointer"
                               >
                                 <Edit3 className="w-3 h-3" />
-                                <span>Editar</span>
+                                <span>Editar Imagen / Precio</span>
                               </button>
                               <button
                                 type="button"

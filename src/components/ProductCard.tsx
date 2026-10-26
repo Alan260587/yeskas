@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import {
   ShoppingBag,
   MessageCircle,
@@ -11,6 +11,10 @@ import {
   Zap,
   DollarSign,
   ArrowRight,
+  Image as ImageIcon,
+  Upload,
+  Save,
+  X,
 } from 'lucide-react';
 import { ServiceItem, DeliverySpeedMode } from '../types/catalog';
 import {
@@ -20,6 +24,7 @@ import {
 } from '../data/catalogData';
 import { useCatalogConfig } from '../context/CatalogConfigContext';
 import { useSession } from '../context/SessionContext';
+import { readAndCompressImageFile } from '../utils/globalCloudDatabase';
 
 interface ProductCardProps {
   service: ServiceItem;
@@ -42,10 +47,13 @@ export const ProductCard: React.FC<ProductCardProps> = React.memo(
     const [justAdded, setJustAdded] = useState(false);
     const [quantity, setQuantity] = useState<number>(1);
     const [deliverySpeed, setDeliverySpeed] = useState<DeliverySpeedMode>('express');
-    const [isEditingPrice, setIsEditingPrice] = useState(false);
+    const [isEditingCard, setIsEditingPrice] = useState(false);
     const [draftPrice, setDraftPrice] = useState(String(service.price));
+    const [draftImage, setDraftImage] = useState<string>('');
+    const [isSavingDraft, setIsSavingDraft] = useState(false);
+    const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-    const { paymentConfig, recordOrder, updateServicePrice } = useCatalogConfig();
+    const { paymentConfig, recordOrder, updateServiceDetails } = useCatalogConfig();
     const { isAdmin } = useSession();
 
     const netInfo = NETWORK_INFO[service.network] || NETWORK_INFO.instagram;
@@ -88,13 +96,38 @@ export const ProductCard: React.FC<ProductCardProps> = React.memo(
       });
     };
 
-    const handleQuickSavePrice = async () => {
-      const num = Math.max(0, Number(draftPrice) || 0);
-      await updateServicePrice(service.id, num);
-      setIsEditingPrice(false);
+    const handleImageFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      try {
+        // Compress into draft preview ONLY — does NOT save until user clicks "Guardar"
+        const compressedDataUrl = await readAndCompressImageFile(file);
+        setDraftImage(compressedDataUrl);
+      } catch {
+        // ignore
+      }
+      e.target.value = '';
+    };
+
+    const handleManualSaveCard = async () => {
+      setIsSavingDraft(true);
+      try {
+        const num = Math.max(0, Number(draftPrice) || 0);
+        const patch: Partial<ServiceItem> = { price: num };
+        if (draftImage && draftImage.trim()) {
+          patch.image = draftImage.trim();
+        }
+        await updateServiceDetails(service.id, patch);
+        setIsEditingPrice(false);
+      } finally {
+        setIsSavingDraft(false);
+      }
     };
 
     const optimizedImg = useMemo(() => {
+      if (isEditingCard && draftImage && draftImage.trim()) {
+        return draftImage.trim();
+      }
       const fallbackMap: Record<string, string> = {
         facebook: 'https://images.unsplash.com/photo-1562577309-4932fdd64cd1?auto=format&fit=crop&w=480&q=75',
         tiktok: 'https://images.unsplash.com/photo-1611605698335-8b1569810432?auto=format&fit=crop&w=480&q=75',
@@ -109,7 +142,7 @@ export const ProductCard: React.FC<ProductCardProps> = React.memo(
           ? service.image.trim()
           : fallbackMap[service.network] || fallbackMap.instagram;
       return rawImg.replace('w=800&q=80', 'w=480&q=75');
-    }, [service.image, service.network]);
+    }, [service.image, service.network, isEditingCard, draftImage]);
 
     return (
       <div
@@ -147,50 +180,104 @@ export const ProductCard: React.FC<ProductCardProps> = React.memo(
             )}
           </div>
 
-          {/* Price Tag Overlay (With inline Admin quick-edit in USD) */}
-          <div className="absolute bottom-3 right-3 bg-zinc-950/95 border border-zinc-700 px-3 py-1.5 rounded-2xl shadow flex items-center gap-1.5">
-            {isAdmin && isEditingPrice ? (
-              <div className="flex items-center gap-1">
-                <span className="text-xs font-black text-emerald-400">$</span>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.5"
-                  value={draftPrice}
-                  onChange={(e) => setDraftPrice(e.target.value)}
-                  className="w-14 bg-zinc-900 border border-emerald-500 rounded px-1.5 py-0.5 text-xs font-black text-white focus:outline-none"
-                />
+          {/* Admin Draft Editor Overlay (Manual "Guardar" for Image & Price) */}
+          {isAdmin && isEditingCard && (
+            <div className="absolute inset-0 bg-zinc-950/95 p-3 flex flex-col justify-between z-10">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-black uppercase tracking-wider text-amber-400">
+                  Editar Imagen y Precio (Borrador)
+                </span>
                 <button
-                  onClick={handleQuickSavePrice}
-                  className="px-1.5 py-0.5 rounded bg-emerald-600 text-white text-[10px] font-black cursor-pointer"
+                  type="button"
+                  onClick={() => {
+                    setIsEditingPrice(false);
+                    setDraftImage('');
+                  }}
+                  className="p-1 rounded-lg bg-zinc-800 text-zinc-400 hover:text-white cursor-pointer"
                 >
-                  OK
+                  <X className="w-3.5 h-3.5" />
                 </button>
               </div>
-            ) : (
-              <>
-                <span className="text-xs text-zinc-300 font-semibold">USD</span>
-                <span className="text-xl font-black text-white">
-                  ${service.price * quantity}
-                </span>
-                {quantity > 1 && (
-                  <span className="text-[10px] text-emerald-400 font-bold">
-                    (x{quantity})
-                  </span>
-                )}
-                {isAdmin && (
+
+              <div className="space-y-2">
+                <div className="flex items-center gap-1.5">
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handleImageFileSelect}
+                    className="hidden"
+                  />
                   <button
-                    onClick={() => {
-                      setDraftPrice(String(service.price));
-                      setIsEditingPrice(true);
-                    }}
-                    className="ml-1 p-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/40 text-amber-300 border border-amber-500/30 transition cursor-pointer"
-                    title="Editar precio en USD (Admin)"
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="px-2.5 py-1.5 rounded-lg bg-purple-600/30 hover:bg-purple-600/50 border border-purple-500/40 text-purple-200 text-[10px] font-bold flex items-center gap-1 shrink-0 cursor-pointer"
                   >
-                    <DollarSign className="w-3 h-3" />
+                    <Upload className="w-3 h-3" />
+                    <span>Subir Foto</span>
                   </button>
-                )}
-              </>
+                  <input
+                    type="text"
+                    value={draftImage}
+                    onChange={(e) => setDraftImage(e.target.value)}
+                    placeholder="O pega URL de imagen..."
+                    className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1 text-[10px] text-white focus:outline-none focus:border-purple-500"
+                  />
+                </div>
+
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1 bg-zinc-900 border border-emerald-500/60 rounded-lg px-2 py-1">
+                    <span className="text-xs font-black text-emerald-400">$</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.5"
+                      value={draftPrice}
+                      onChange={(e) => setDraftPrice(e.target.value)}
+                      className="w-16 bg-transparent text-xs font-black text-white focus:outline-none"
+                    />
+                    <span className="text-[10px] text-zinc-400 font-bold">USD</span>
+                  </div>
+
+                  <button
+                    type="button"
+                    disabled={isSavingDraft}
+                    onClick={handleManualSaveCard}
+                    className="flex-1 py-1.5 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-black flex items-center justify-center gap-1 shadow cursor-pointer"
+                  >
+                    <Save className="w-3.5 h-3.5" />
+                    <span>{isSavingDraft ? 'Guardando...' : 'Guardar'}</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Price Tag Overlay */}
+          <div className="absolute bottom-3 right-3 bg-zinc-950/95 border border-zinc-700 px-3 py-1.5 rounded-2xl shadow flex items-center gap-1.5">
+            <span className="text-xs text-zinc-300 font-semibold">USD</span>
+            <span className="text-xl font-black text-white">
+              ${service.price * quantity}
+            </span>
+            {quantity > 1 && (
+              <span className="text-[10px] text-emerald-400 font-bold">
+                (x{quantity})
+              </span>
+            )}
+            {isAdmin && !isEditingCard && (
+              <button
+                type="button"
+                onClick={() => {
+                  setDraftPrice(String(service.price));
+                  setDraftImage(service.image || '');
+                  setIsEditingPrice(true);
+                }}
+                className="ml-1 px-1.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/40 text-amber-300 border border-amber-500/30 transition cursor-pointer flex items-center gap-1 text-[10px] font-bold"
+                title="Editar Imagen y Precio en USD (Se guarda al pulsar Guardar)"
+              >
+                <ImageIcon className="w-3 h-3" />
+                <DollarSign className="w-3 h-3 -ml-1" />
+              </button>
             )}
           </div>
         </div>
