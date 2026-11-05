@@ -5,7 +5,7 @@
 // with Retained State Persistence + Cloudflare Global Edge CDN (Bytebin).
 // ============================================================================
 
-export type GlobalStoreType = 'config' | 'orders' | 'pdfs';
+export type GlobalStoreType = 'config' | 'orders' | 'pdfs' | 'raffles';
 
 const GLOBAL_BROKERS = [
   'wss://broker.emqx.io:8084/mqtt',
@@ -16,6 +16,7 @@ const TOPIC_MAP: Record<GlobalStoreType, string> = {
   config: 'monetizatucanal/global/v3/config',
   orders: 'monetizatucanal/global/v3/orders',
   pdfs: 'monetizatucanal/global/v3/pdfs',
+  raffles: 'monetizatucanal/global/v3/raffles',
 };
 
 interface ReplicationEnvelope {
@@ -31,18 +32,21 @@ const listeners: Record<GlobalStoreType, Set<StoreListener>> = {
   config: new Set(),
   orders: new Set(),
   pdfs: new Set(),
+  raffles: new Set(),
 };
 
 const latestReceivedTimestamp: Record<GlobalStoreType, number> = {
   config: 0,
   orders: 0,
   pdfs: 0,
+  raffles: 0,
 };
 
 const latestReceivedData: Record<GlobalStoreType, any> = {
   config: null,
   orders: null,
   pdfs: null,
+  raffles: null,
 };
 
 // ============================================================================
@@ -259,6 +263,7 @@ class GlobalBrokerConnection {
                 TOPIC_MAP.config,
                 TOPIC_MAP.orders,
                 TOPIC_MAP.pdfs,
+                TOPIC_MAP.raffles,
               ])
             );
 

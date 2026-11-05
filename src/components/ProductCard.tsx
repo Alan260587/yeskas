@@ -15,8 +15,9 @@ import {
   Upload,
   Save,
   X,
+  Trophy,
 } from 'lucide-react';
-import { ServiceItem, DeliverySpeedMode } from '../types/catalog';
+import { ServiceItem, DeliverySpeedMode, isRaffleMonetizationProduct } from '../types/catalog';
 import {
   NETWORK_INFO,
   buildSingleProductWhatsAppMessage,
@@ -53,10 +54,25 @@ export const ProductCard: React.FC<ProductCardProps> = React.memo(
     const [isSavingDraft, setIsSavingDraft] = useState(false);
     const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-    const { paymentConfig, recordOrder, updateServiceDetails } = useCatalogConfig();
+    const { paymentConfig, recordOrder, updateServiceDetails, raffleState } = useCatalogConfig();
     const { isAdmin } = useSession();
 
     const netInfo = NETWORK_INFO[service.network] || NETWORK_INFO.instagram;
+    const isRaffleProduct = useMemo(() => isRaffleMonetizationProduct(service), [service]);
+    const cycleSalesCount = raffleState.currentCycleParticipants.length;
+    const latestWinnerNameOnly = useMemo(() => {
+      if (!raffleState.drawHistory || raffleState.drawHistory.length === 0) {
+        return null;
+      }
+      const rawName = raffleState.drawHistory[0]?.winner?.buyerName || '';
+      // Ensure ONLY the name is shown publicly, never any phone digits or links
+      const sanitizedName = rawName
+        .replace(/https?:\/\/\S+/gi, '')
+        .replace(/wa\.me\/\S+/gi, '')
+        .replace(/\+?[0-9]{7,15}/g, '')
+        .trim();
+      return sanitizedName || 'Ganador verificado';
+    }, [raffleState.drawHistory]);
 
     const handleAdd = () => {
       onAddToCart(service, quantity, deliverySpeed);
@@ -308,6 +324,50 @@ export const ProductCard: React.FC<ProductCardProps> = React.memo(
             <p className="text-xs text-zinc-300 leading-relaxed line-clamp-2 mb-3">
               {service.description}
             </p>
+
+            {/* Point E: Exclusive Raffle & $900 USD Credit Progress Block ONLY on the $550 USD Monetization Product */}
+            {isRaffleProduct && (
+              <div className="mb-3 p-3 rounded-2xl bg-gradient-to-br from-amber-950/50 via-zinc-950 to-emerald-950/40 border border-amber-500/40 space-y-2">
+                <div className="flex items-start gap-2">
+                  <div className="w-6 h-6 rounded-lg bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 shrink-0 mt-0.5">
+                    <Trophy className="w-3.5 h-3.5" />
+                  </div>
+                  <p className="text-[11px] font-black text-amber-300 leading-snug">
+                    Cada 2 ventas se sortea un crédito de $900 USD para monetizar un canal
+                  </p>
+                </div>
+
+                {/* Cycle Progress Bar & Counter Text */}
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between text-[11px] font-bold">
+                    <span className="text-emerald-300">
+                      {cycleSalesCount === 1
+                        ? '1 de 2 ventas — falta 1 para el sorteo'
+                        : cycleSalesCount === 0
+                        ? '0 de 2 ventas — faltan 2 para el sorteo'
+                        : '2 de 2 ventas — ¡sorteo en curso!'}
+                    </span>
+                    <span className="text-[10px] font-mono text-zinc-400">
+                      Ciclo #{raffleState.currentCycleNumber}
+                    </span>
+                  </div>
+                  <div className="w-full h-2 bg-zinc-900 rounded-full overflow-hidden border border-zinc-800">
+                    <div
+                      className="h-full bg-gradient-to-r from-amber-500 to-emerald-400 transition-all duration-300"
+                      style={{ width: `${Math.min(100, (cycleSalesCount / 2) * 100)}%` }}
+                    />
+                  </div>
+                </div>
+
+                {/* Latest Winner (Name ONLY, never WhatsApp) */}
+                <div className="pt-1 border-t border-zinc-800/80 flex items-center justify-between text-[11px]">
+                  <span className="text-zinc-400 font-semibold">Último ganador:</span>
+                  <span className="font-black text-white truncate max-w-[170px]">
+                    {latestWinnerNameOnly ? `🏆 ${latestWinnerNameOnly}` : 'Por definir en este ciclo'}
+                  </span>
+                </div>
+              </div>
+            )}
 
             {/* Base B: Delivery Speed Selector (Express 48-72h vs Progresivo 7d+) */}
             <div className="space-y-1.5 pt-2 border-t border-zinc-800/60">

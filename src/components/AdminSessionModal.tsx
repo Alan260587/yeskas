@@ -35,12 +35,14 @@ import {
   Image as ImageIcon,
   Upload,
   Globe,
+  Trophy,
 } from 'lucide-react';
 import { useSession } from '../context/SessionContext';
 import { useCatalogConfig } from '../context/CatalogConfigContext';
 import { NETWORK_INFO } from '../data/catalogData';
 import { SocialNetwork, OrderStatus, ServiceItem } from '../types/catalog';
 import { readAndCompressImageFile } from '../utils/globalCloudDatabase';
+import { RafflesPanel } from './RafflesPanel';
 
 interface AdminSessionModalProps {
   isOpen: boolean;
@@ -49,7 +51,7 @@ interface AdminSessionModalProps {
   onOpenUploadPdfs?: () => void;
 }
 
-type AdminTab = 'prices' | 'products' | 'payments' | 'orders' | 'session';
+type AdminTab = 'prices' | 'products' | 'payments' | 'orders' | 'raffles' | 'session';
 
 export const AdminSessionModal: React.FC<AdminSessionModalProps> = ({
   isOpen,
@@ -87,6 +89,7 @@ export const AdminSessionModal: React.FC<AdminSessionModalProps> = ({
     updateOrderStatus,
     deleteOrder,
     clearOrders,
+    raffleState,
     driveInfo,
     connectGoogleDrive,
     disconnectGoogleDrive,
@@ -527,6 +530,21 @@ export const AdminSessionModal: React.FC<AdminSessionModalProps> = ({
             </button>
 
             <button
+              onClick={() => setActiveTab('raffles')}
+              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-extrabold whitespace-nowrap transition cursor-pointer ${
+                activeTab === 'raffles'
+                  ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-zinc-950 shadow-lg shadow-amber-950/50'
+                  : 'bg-zinc-900 hover:bg-zinc-800 text-amber-300 border border-amber-500/30'
+              }`}
+            >
+              <Trophy className="w-3.5 h-3.5" />
+              <span>5. Sorteos y Créditos ($550)</span>
+              <span className="px-1.5 py-0.2 rounded-full bg-black/30 text-[10px]">
+                {raffleState.currentCycleParticipants.length}/2
+              </span>
+            </button>
+
+            <button
               onClick={() => setActiveTab('session')}
               className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-extrabold whitespace-nowrap transition cursor-pointer ${
                 activeTab === 'session'
@@ -535,7 +553,7 @@ export const AdminSessionModal: React.FC<AdminSessionModalProps> = ({
               }`}
             >
               <Users className="w-3.5 h-3.5" />
-              <span>5. Usuarios y PDFs ({totalUsers})</span>
+              <span>6. Usuarios y PDFs ({totalUsers})</span>
             </button>
           </div>
         )}
@@ -2180,6 +2198,13 @@ export const AdminSessionModal: React.FC<AdminSessionModalProps> = ({
                 </div>
               </div>
             </div>
+          )}
+
+          {/* =============================================================== */}
+          {/* TAB 6: SORTEOS Y CRÉDITOS ($550 USD -> CRÉDITO $900 USD)        */}
+          {/* =============================================================== */}
+          {isAdmin && activeTab === 'raffles' && (
+            <RafflesPanel onShowToast={showToast} />
           )}
         </div>
       </div>

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   ServiceItem,
   SpecialPackage,
@@ -7,6 +7,15 @@ import {
   OrderRecord,
   OrderStatus,
   SocialNetwork,
+  RaffleSystemState,
+  RaffleParticipant,
+  RaffleWinnerRecord,
+  RaffleCreditRecord,
+  RaffleCreditMonthRecord,
+  RaffleCorrectionRecord,
+  RaffleCreditStatus,
+  isRaffleMonetizationProduct,
+  extractBuyerInfoFromOrder,
 } from '../types/catalog';
 import {
   SERVICES_DATA,
@@ -35,6 +44,58 @@ import {
 
 const LOCAL_CONFIG_KEY = 'growth_viral_admin_config_v1';
 const LOCAL_ORDERS_KEY = 'growth_viral_orders_history_v1';
+const LOCAL_RAFFLES_KEY = 'growth_viral_raffles_state_v1';
+
+const INITIAL_CUSTOM_SERVICES: ServiceItem[] = [
+  {
+    id: 'custom-youtube-1793909619457',
+    network: 'youtube',
+    name: 'de 0 a monetizar tu canal',
+    metric: 'con todas las vistas y seguidores para monetizar',
+    price: 550,
+    unit: 'con todas las vistas y seguidores para monetizar',
+    description: 'Servicio de de 0 a monetizar tu canal garantizado.',
+    popular: true,
+    tag: 'Nuevo',
+    deliveryTime: '48 a 72 horas',
+    guarantee: 'Garantía 30D',
+    image: 'https://images.unsplash.com/photo-1526778548025-fa2f459cd5c1?auto=format&fit=crop&w=800&q=80',
+    isCustom: true,
+    hidden: false,
+  },
+  {
+    id: 'custom-kick-1793042628459',
+    network: 'kick',
+    name: '5mil seguidores',
+    metric: '5mil',
+    price: 50,
+    unit: '5mil',
+    description: 'Servicio de 5mil seguidores garantizado.',
+    popular: true,
+    tag: 'Nuevo',
+    deliveryTime: '48 a 72 horas',
+    guarantee: 'Garantía 30D',
+    image: 'https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=800&q=80',
+    isCustom: true,
+    hidden: false,
+  },
+  {
+    id: 'custom-spotify-1793035914804',
+    network: 'spotify',
+    name: '100mil vista y 10mil oyentes mensuales por 200$',
+    metric: '100mil',
+    price: 200,
+    unit: '100mil',
+    description: '100mil vista  y 19mil oyentes',
+    popular: true,
+    tag: 'Nuevo',
+    deliveryTime: '48 a 72 horas',
+    guarantee: 'Garantía 30D',
+    image: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?auto=format&fit=crop&w=800&q=80',
+    isCustom: true,
+    hidden: false,
+  },
+];
 
 interface StoredAdminState {
   serviceOverrides: Record<string, Partial<ServiceItem>>;
@@ -49,10 +110,21 @@ interface StoredAdminState {
 
 const DEFAULT_ADMIN_STATE: StoredAdminState = {
   serviceOverrides: {},
-  customServices: [],
+  customServices: INITIAL_CUSTOM_SERVICES,
   specialOfferOverrides: {},
   diagnosticPriceOverrides: {},
   paymentConfig: DEFAULT_PAYMENT_CONFIG,
+  updatedAt: 0,
+};
+
+const DEFAULT_RAFFLE_STATE: RaffleSystemState = {
+  currentCycleNumber: 1,
+  currentCycleParticipants: [],
+  consumedOrderIds: [],
+  excludedOrderIds: [],
+  drawHistory: [],
+  credits: [],
+  corrections: [],
   updatedAt: 0,
 };
 
@@ -73,7 +145,7 @@ export interface PendingDriveConfirmation {
   fileId: string;
   fileName: string;
   description: string;
-  payloadToSave?: StoredAdminState;
+  payloadToSave?: any;
   pendingImages?: Array<{ name: string; dataUrl: string }>;
 }
 
@@ -85,6 +157,7 @@ interface CatalogConfigContextValue {
   getDiagnosticPrice: (id: string, fallback: number) => number;
   paymentConfig: PaymentConfig;
   orders: OrderRecord[];
+  raffleState: RaffleSystemState;
   driveInfo: GoogleDriveConnectionInfo;
   pendingDriveConfirmation: PendingDriveConfirmation | null;
   connectGoogleDrive: () => Promise<void>;
@@ -126,8 +199,24 @@ interface CatalogConfigContextValue {
     orderData: Omit<OrderRecord, 'id' | 'createdAt' | 'status'>
   ) => Promise<OrderRecord>;
   updateOrderStatus: (id: string, status: OrderStatus) => Promise<void>;
+  updateOrderClientLink: (id: string, clientLink: string) => Promise<void>;
   deleteOrder: (id: string) => Promise<void>;
   clearOrders: () => Promise<void>;
+  // Sorteos y Créditos ($550 USD -> Crédito $900 USD)
+  correctRaffleCycleManually: (payload: {
+    orderIdToRemove?: string;
+    reason: string;
+  }) => Promise<void>;
+  recordCreditMonthlyEarnings: (
+    creditId: string,
+    monthLabel: string,
+    reportedEarningsUSD: number
+  ) => Promise<void>;
+  updateWinnerContactInfo: (
+    creditId: string,
+    winnerName: string,
+    winnerWhatsapp: string
+  ) => Promise<void>;
 }
 
 const CatalogConfigContext = createContext<CatalogConfigContextValue | undefined>(undefined);
@@ -142,15 +231,39 @@ const DEFAULT_NETWORK_IMAGES: Record<SocialNetwork, string> = {
   special: 'https://images.unsplash.com/photo-1611162616305-c69b3fa7fbe0?auto=format&fit=crop&w=800&q=80',
 };
 
+function sanitizeRaffleState(raw: any): RaffleSystemState {
+  if (!raw || typeof raw !== 'object') return DEFAULT_RAFFLE_STATE;
+  return {
+    currentCycleNumber:
+      typeof raw.currentCycleNumber === 'number' && raw.currentCycleNumber >= 1
+        ? raw.currentCycleNumber
+        : 1,
+    currentCycleParticipants: Array.isArray(raw.currentCycleParticipants)
+      ? raw.currentCycleParticipants
+      : [],
+    consumedOrderIds: Array.isArray(raw.consumedOrderIds) ? raw.consumedOrderIds : [],
+    excludedOrderIds: Array.isArray(raw.excludedOrderIds) ? raw.excludedOrderIds : [],
+    drawHistory: Array.isArray(raw.drawHistory) ? raw.drawHistory : [],
+    credits: Array.isArray(raw.credits) ? raw.credits : [],
+    corrections: Array.isArray(raw.corrections) ? raw.corrections : [],
+    updatedAt: typeof raw.updatedAt === 'number' ? raw.updatedAt : 0,
+  };
+}
+
 export const CatalogConfigProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [adminState, setAdminState] = useState<StoredAdminState>(() => {
     try {
       const saved = localStorage.getItem(LOCAL_CONFIG_KEY);
       if (saved) {
         const parsed = JSON.parse(saved);
+        const savedCustom = Array.isArray(parsed.customServices) ? parsed.customServices : [];
+        // Ensure the $550 "de 0 a monetizar tu canal" and initial custom services exist if none present
+        const mergedCustom =
+          savedCustom.length > 0 ? savedCustom : INITIAL_CUSTOM_SERVICES;
         return {
           ...DEFAULT_ADMIN_STATE,
           ...parsed,
+          customServices: mergedCustom,
           paymentConfig: {
             ...DEFAULT_PAYMENT_CONFIG,
             ...(parsed.paymentConfig || {}),
@@ -180,6 +293,23 @@ export const CatalogConfigProvider: React.FC<{ children: React.ReactNode }> = ({
     return [];
   });
 
+  const [raffleState, setRaffleState] = useState<RaffleSystemState>(() => {
+    try {
+      const saved = localStorage.getItem(LOCAL_RAFFLES_KEY);
+      if (saved) {
+        return sanitizeRaffleState(JSON.parse(saved));
+      }
+    } catch {
+      // ignore
+    }
+    return DEFAULT_RAFFLE_STATE;
+  });
+
+  const raffleStateRef = useRef<RaffleSystemState>(raffleState);
+  useEffect(() => {
+    raffleStateRef.current = raffleState;
+  }, [raffleState]);
+
   const [driveInfo, setDriveInfo] = useState<GoogleDriveConnectionInfo>({
     userEmail: null,
     userName: null,
@@ -195,11 +325,11 @@ export const CatalogConfigProvider: React.FC<{ children: React.ReactNode }> = ({
   const [pendingDriveConfirmation, setPendingDriveConfirmation] =
     useState<PendingDriveConfirmation | null>(null);
 
-  const lastConfigFingerprintRef = React.useRef<string>('');
-  const lastAppliedTimestampRef = React.useRef<number>(adminState.updatedAt || 0);
-  const apiServerAvailableRef = React.useRef<boolean>(true);
+  const lastConfigFingerprintRef = useRef<string>('');
+  const lastAppliedTimestampRef = useRef<number>(adminState.updatedAt || 0);
+  const lastRaffleTimestampRef = useRef<number>(raffleState.updatedAt || 0);
+  const apiServerAvailableRef = useRef<boolean>(true);
 
-  // Listen to Firebase Auth state changes for Google Drive
   useEffect(() => {
     const unsub = initAuth((user, hasToken) => {
       setDriveInfo((prev) => ({
@@ -213,12 +343,201 @@ export const CatalogConfigProvider: React.FC<{ children: React.ReactNode }> = ({
     return unsub;
   }, []);
 
+  const persistRaffleState = useCallback(async (nextState: RaffleSystemState) => {
+    const now = Date.now();
+    const stamped: RaffleSystemState = {
+      ...nextState,
+      updatedAt: now,
+    };
+    raffleStateRef.current = stamped;
+    lastRaffleTimestampRef.current = now;
+    setRaffleState(stamped);
+
+    try {
+      localStorage.setItem(LOCAL_RAFFLES_KEY, JSON.stringify(stamped));
+    } catch {
+      // ignore
+    }
+
+    await saveToGlobalCloudStore('raffles', stamped, now).catch(() => {});
+  }, []);
+
+  const applyCloudRaffleState = useCallback((incomingRaw: any, incomingUpdatedAt?: number) => {
+    if (!incomingRaw || typeof incomingRaw !== 'object') return;
+    const incoming = sanitizeRaffleState(incomingRaw);
+    const ts = incomingUpdatedAt || incoming.updatedAt || 0;
+
+    const current = raffleStateRef.current;
+    // Never overwrite with an older state that has fewer completed draws or lower timestamp
+    if (ts > 0 && ts < lastRaffleTimestampRef.current && incoming.drawHistory.length <= current.drawHistory.length) {
+      return;
+    }
+    if (incoming.drawHistory.length < current.drawHistory.length) {
+      return;
+    }
+
+    const nextStamped: RaffleSystemState = {
+      ...incoming,
+      updatedAt: Math.max(ts, current.updatedAt),
+    };
+
+    if (JSON.stringify(current) === JSON.stringify(nextStamped)) {
+      return;
+    }
+
+    raffleStateRef.current = nextStamped;
+    lastRaffleTimestampRef.current = nextStamped.updatedAt;
+    setRaffleState(nextStamped);
+    try {
+      localStorage.setItem(LOCAL_RAFFLES_KEY, JSON.stringify(nextStamped));
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  // ============================================================================
+  // AUTOMATIC RAFFLE ENGINE (Rules 1, 2, 3, 5 — Idempotent & Reactive to Orders)
+  // ============================================================================
+  const evaluateOrdersForRaffle = useCallback(
+    (ordersList: OrderRecord[]) => {
+      if (!Array.isArray(ordersList) || ordersList.length === 0) return;
+
+      const current = raffleStateRef.current;
+      const consumedSet = new Set(current.consumedOrderIds);
+      const excludedSet = new Set(current.excludedOrderIds);
+      const inCycleSet = new Set(current.currentCycleParticipants.map((p) => p.orderId));
+
+      // Sort orders chronologically (oldest confirmed first) so cycle order is deterministic
+      const qualifyingNewOrders = [...ordersList]
+        .filter((order) => {
+          if (!order || !order.id) return false;
+          if (order.status !== 'completado') return false;
+          if (consumedSet.has(order.id) || excludedSet.has(order.id) || inCycleSet.has(order.id)) {
+            return false;
+          }
+          return Array.isArray(order.items) && order.items.some((item) => isRaffleMonetizationProduct(item));
+        })
+        .sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+
+      if (qualifyingNewOrders.length === 0 && current.currentCycleParticipants.length < 2) {
+        return;
+      }
+
+      let nextCycleNumber = current.currentCycleNumber;
+      let nextParticipants: RaffleParticipant[] = [...current.currentCycleParticipants];
+      const nextConsumed = [...current.consumedOrderIds];
+      const nextDrawHistory = [...current.drawHistory];
+      const nextCredits = [...current.credits];
+      let mutated = false;
+
+      const executeDrawIfReady = () => {
+        while (nextParticipants.length >= 2) {
+          const p1 = nextParticipants[0];
+          const p2 = nextParticipants[1];
+          nextParticipants = nextParticipants.slice(2);
+
+          // Idempotency guard: ensure neither order was already drawn in drawHistory
+          const alreadyDrawn = nextDrawHistory.some(
+            (d) =>
+              d.cycleNumber === nextCycleNumber ||
+              d.participants.some((p) => p.orderId === p1.orderId || p.orderId === p2.orderId)
+          );
+
+          if (!nextConsumed.includes(p1.orderId)) nextConsumed.push(p1.orderId);
+          if (!nextConsumed.includes(p2.orderId)) nextConsumed.push(p2.orderId);
+
+          if (!alreadyDrawn) {
+            const now = Date.now();
+            const winnerIndex = Math.random() < 0.5 ? 0 : 1;
+            const winner = winnerIndex === 0 ? p1 : p2;
+            const raffleId = `raffle-cycle-${nextCycleNumber}-${now}`;
+            const creditId = `credit-cycle-${nextCycleNumber}-${now}`;
+
+            const drawRecord: RaffleWinnerRecord = {
+              id: raffleId,
+              cycleNumber: nextCycleNumber,
+              drawnAt: now,
+              winner,
+              participants: [p1, p2],
+              creditId,
+            };
+
+            const creditRecord: RaffleCreditRecord = {
+              id: creditId,
+              raffleId,
+              cycleNumber: nextCycleNumber,
+              winnerOrderId: winner.orderId,
+              winnerName: winner.buyerName,
+              winnerWhatsapp: winner.buyerWhatsapp,
+              clientLinkRaw: winner.clientLinkRaw,
+              totalCreditUSD: 900,
+              remainingBalanceUSD: 900,
+              status: 'esperando_monetizacion',
+              months: [],
+              createdAt: now,
+              updatedAt: now,
+            };
+
+            nextDrawHistory.unshift(drawRecord);
+            nextCredits.unshift(creditRecord);
+          }
+
+          nextCycleNumber += 1;
+          mutated = true;
+        }
+      };
+
+      // First check if currentCycleParticipants already has 2
+      if (nextParticipants.length >= 2) {
+        executeDrawIfReady();
+      }
+
+      // Add each newly completed $550 order and trigger draw immediately upon reaching 2/2
+      for (const order of qualifyingNewOrders) {
+        if (nextConsumed.includes(order.id)) continue;
+        const buyerInfo = extractBuyerInfoFromOrder(order);
+        const participant: RaffleParticipant = {
+          orderId: order.id,
+          buyerName: buyerInfo.buyerName,
+          buyerWhatsapp: buyerInfo.buyerWhatsapp,
+          clientLinkRaw: order.clientLink || '',
+          confirmedAt: Date.now(),
+        };
+        nextParticipants.push(participant);
+        mutated = true;
+
+        if (nextParticipants.length >= 2) {
+          executeDrawIfReady();
+        }
+      }
+
+      if (mutated) {
+        const nextState: RaffleSystemState = {
+          ...current,
+          currentCycleNumber: nextCycleNumber,
+          currentCycleParticipants: nextParticipants,
+          consumedOrderIds: nextConsumed,
+          drawHistory: nextDrawHistory,
+          credits: nextCredits,
+          updatedAt: Date.now(),
+        };
+        persistRaffleState(nextState);
+      }
+    },
+    [persistRaffleState]
+  );
+
+  // React to any change in orders history
+  useEffect(() => {
+    evaluateOrdersForRaffle(orders);
+  }, [orders, evaluateOrdersForRaffle]);
+
   const applyServerConfig = useCallback((config: any) => {
     if (!config || typeof config !== 'object') return;
 
     const incomingTimestamp = typeof config.updatedAt === 'number' ? config.updatedAt : 0;
     if (incomingTimestamp > 0 && incomingTimestamp < lastAppliedTimestampRef.current) {
-      return; // Ignore older state
+      return;
     }
 
     const fingerprint = `${incomingTimestamp}_${JSON.stringify(config.customServices || []).length}_${JSON.stringify(config.serviceOverrides || {}).length}_${JSON.stringify(config.specialOfferOverrides || {}).length}_${Object.keys(config.diagnosticPriceOverrides || {}).length}`;
@@ -230,9 +549,10 @@ export const CatalogConfigProvider: React.FC<{ children: React.ReactNode }> = ({
       lastAppliedTimestampRef.current = incomingTimestamp;
     }
 
+    const incomingCustom = Array.isArray(config.customServices) ? config.customServices : [];
     const nextState: StoredAdminState = {
       serviceOverrides: config.serviceOverrides || {},
-      customServices: Array.isArray(config.customServices) ? config.customServices : [],
+      customServices: incomingCustom.length > 0 ? incomingCustom : INITIAL_CUSTOM_SERVICES,
       specialOfferOverrides: config.specialOfferOverrides || {},
       diagnosticPriceOverrides: config.diagnosticPriceOverrides || {},
       paymentConfig: {
@@ -265,7 +585,7 @@ export const CatalogConfigProvider: React.FC<{ children: React.ReactNode }> = ({
   const applyServerOrders = useCallback((serverOrders: any) => {
     if (!Array.isArray(serverOrders)) return;
     setOrders((prev) => {
-      if (prev.length === serverOrders.length && JSON.stringify(prev[0]) === JSON.stringify(serverOrders[0])) {
+      if (prev.length === serverOrders.length && JSON.stringify(prev) === JSON.stringify(serverOrders)) {
         return prev;
       }
       try {
@@ -277,8 +597,6 @@ export const CatalogConfigProvider: React.FC<{ children: React.ReactNode }> = ({
     });
   }, []);
 
-  // Internal helper that checks if Google Drive is connected and either creates a new Drive file
-  // or queues a mandatory user confirmation before overwriting an existing Drive file.
   const queueOrCreateGoogleDriveSync = useCallback(
     async (
       stateToSync: StoredAdminState,
@@ -291,19 +609,20 @@ export const CatalogConfigProvider: React.FC<{ children: React.ReactNode }> = ({
       try {
         setDriveInfo((prev) => ({ ...prev, isSyncing: true, error: null }));
         const existingFile = await findDriveCatalogFile();
+        const combinedDrivePayload = {
+          ...stateToSync,
+          raffleState: raffleStateRef.current,
+          ordersSnapshotCount: orders.length,
+          syncedByEngine: 'Neon + Turso + Google Drive Global Edge v3',
+        };
 
         if (!existingFile) {
-          // Non-destructive creation of initial sync file in user's Google Drive
           for (const img of newImages) {
             if (img.dataUrl.startsWith('data:image/')) {
               await uploadImageDataUrlToGoogleDrive(img.name, img.dataUrl).catch(() => null);
             }
           }
-          const created = await createDriveCatalogFile({
-            ...stateToSync,
-            ordersSnapshotCount: orders.length,
-            syncedByEngine: 'Neon + Turso + Google Drive Global Edge v3',
-          });
+          const created = await createDriveCatalogFile(combinedDrivePayload);
           setDriveInfo((prev) => ({
             ...prev,
             isSyncing: false,
@@ -313,7 +632,6 @@ export const CatalogConfigProvider: React.FC<{ children: React.ReactNode }> = ({
             error: null,
           }));
         } else {
-          // Existing file found in Google Drive -> Mandatory confirmation before overwriting
           setDriveInfo((prev) => ({
             ...prev,
             isSyncing: false,
@@ -324,8 +642,8 @@ export const CatalogConfigProvider: React.FC<{ children: React.ReactNode }> = ({
             action: 'overwrite',
             fileId: existingFile.id,
             fileName: existingFile.name || DRIVE_SYNC_FILENAME,
-            description: `Se actualizará el archivo "${existingFile.name || DRIVE_SYNC_FILENAME}" en tu Google Drive con los últimos productos, imágenes y precios en USD (ya replicados en tiempo real en Neon/Turso Global para todos los dispositivos).`,
-            payloadToSave: stateToSync,
+            description: `Se actualizará el archivo "${existingFile.name || DRIVE_SYNC_FILENAME}" en tu Google Drive con los últimos productos, imágenes, precios en USD y estado de Sorteos y Créditos.`,
+            payloadToSave: combinedDrivePayload,
             pendingImages: newImages,
           });
         }
@@ -359,11 +677,8 @@ export const CatalogConfigProvider: React.FC<{ children: React.ReactNode }> = ({
         // ignore
       }
 
-      // 1. Replicate immediately to Neon/Turso & Global Multi-Region Cloud Database (EMQX + HiveMQ WSS + Bytebin CDN)
-      // Works on https://monetizatucanal.vercel.app/ and across all countries, states, and IPs in <40ms
       const globalPromise = saveToGlobalCloudStore('config', stateWithTimestamp, now).catch(() => {});
 
-      // 2. Also sync to local Express backend if available
       if (apiServerAvailableRef.current) {
         try {
           const res = await fetch('/api/admin-config', {
@@ -386,7 +701,6 @@ export const CatalogConfigProvider: React.FC<{ children: React.ReactNode }> = ({
 
       await globalPromise;
 
-      // 3. If Google Drive is connected, create or prompt confirmation to update Google Drive file
       if (hasInMemoryAccessToken()) {
         await queueOrCreateGoogleDriveSync(stateWithTimestamp, newImages);
       }
@@ -394,7 +708,6 @@ export const CatalogConfigProvider: React.FC<{ children: React.ReactNode }> = ({
     [applyServerConfig, queueOrCreateGoogleDriveSync]
   );
 
-  // Connect Google Drive & reconcile with Neon/Turso Global Cloud
   const connectGoogleDrive = useCallback(async () => {
     try {
       setDriveInfo((prev) => ({ ...prev, isSyncing: true, error: null }));
@@ -402,7 +715,6 @@ export const CatalogConfigProvider: React.FC<{ children: React.ReactNode }> = ({
 
       const existingFile = await findDriveCatalogFile(accessToken);
       if (existingFile) {
-        // Read existing Google Drive backup to see if it has newer or additional items
         try {
           const driveData = await readDriveCatalogFile(existingFile.id, accessToken);
           if (driveData && typeof driveData === 'object') {
@@ -414,6 +726,10 @@ export const CatalogConfigProvider: React.FC<{ children: React.ReactNode }> = ({
                 driveWebViewLink: existingFile.webViewLink,
               });
               await saveToGlobalCloudStore('config', driveData, driveUpdatedAt).catch(() => {});
+            }
+            if (driveData.raffleState) {
+              applyCloudRaffleState(driveData.raffleState, driveData.raffleState.updatedAt);
+              await saveToGlobalCloudStore('raffles', driveData.raffleState, driveData.raffleState.updatedAt).catch(() => {});
             }
           }
         } catch {
@@ -432,19 +748,14 @@ export const CatalogConfigProvider: React.FC<{ children: React.ReactNode }> = ({
           error: null,
         });
       } else {
-        // Create initial file in Google Drive immediately (non-destructive creation)
         const now = Date.now();
-        const payload: StoredAdminState = {
+        const payload = {
           ...adminState,
+          raffleState: raffleStateRef.current,
           updatedAt: adminState.updatedAt || now,
+          syncedByEngine: 'Neon + Turso + Google Drive Global Edge v3',
         };
-        const created = await createDriveCatalogFile(
-          {
-            ...payload,
-            syncedByEngine: 'Neon + Turso + Google Drive Global Edge v3',
-          },
-          accessToken
-        );
+        const created = await createDriveCatalogFile(payload, accessToken);
         setDriveInfo({
           userEmail: user.email || null,
           userName: user.displayName || null,
@@ -465,7 +776,7 @@ export const CatalogConfigProvider: React.FC<{ children: React.ReactNode }> = ({
       }));
       throw err;
     }
-  }, [adminState, applyServerConfig]);
+  }, [adminState, applyServerConfig, applyCloudRaffleState]);
 
   const disconnectGoogleDrive = useCallback(async () => {
     await googleDriveLogout();
@@ -485,8 +796,9 @@ export const CatalogConfigProvider: React.FC<{ children: React.ReactNode }> = ({
     try {
       setDriveInfo((prev) => ({ ...prev, isSyncing: true, error: null }));
       const existingFile = await findDriveCatalogFile();
-      const stateToSave: StoredAdminState = {
+      const stateToSave = {
         ...adminState,
+        raffleState: raffleStateRef.current,
         updatedAt: Date.now(),
       };
 
@@ -496,10 +808,11 @@ export const CatalogConfigProvider: React.FC<{ children: React.ReactNode }> = ({
           syncedByEngine: 'Neon + Turso + Google Drive Global Edge v3',
         });
         await saveToGlobalCloudStore('config', {
-          ...stateToSave,
+          ...adminState,
           driveFileId: created.id,
           driveWebViewLink: created.webViewLink,
         });
+        await saveToGlobalCloudStore('raffles', raffleStateRef.current);
         setDriveInfo((prev) => ({
           ...prev,
           isSyncing: false,
@@ -519,7 +832,7 @@ export const CatalogConfigProvider: React.FC<{ children: React.ReactNode }> = ({
           action: 'overwrite',
           fileId: existingFile.id,
           fileName: existingFile.name || DRIVE_SYNC_FILENAME,
-          description: `¿Confirmas sobrescribir y actualizar "${existingFile.name || DRIVE_SYNC_FILENAME}" en tu Google Drive con todos tus productos, imágenes y precios actuales, y replicarlo en Neon/Turso Global?`,
+          description: `¿Confirmas sobrescribir y actualizar "${existingFile.name || DRIVE_SYNC_FILENAME}" en tu Google Drive con todos tus productos, imágenes, precios y estado de Sorteos y Créditos?`,
           payloadToSave: stateToSave,
         });
       }
@@ -550,7 +863,9 @@ export const CatalogConfigProvider: React.FC<{ children: React.ReactNode }> = ({
         const now = Date.now();
         const restoredState: StoredAdminState = {
           serviceOverrides: driveData.serviceOverrides || {},
-          customServices: Array.isArray(driveData.customServices) ? driveData.customServices : [],
+          customServices: Array.isArray(driveData.customServices) && driveData.customServices.length > 0
+            ? driveData.customServices
+            : INITIAL_CUSTOM_SERVICES,
           specialOfferOverrides: driveData.specialOfferOverrides || {},
           diagnosticPriceOverrides: driveData.diagnosticPriceOverrides || {},
           paymentConfig: driveData.paymentConfig || DEFAULT_PAYMENT_CONFIG,
@@ -559,8 +874,12 @@ export const CatalogConfigProvider: React.FC<{ children: React.ReactNode }> = ({
           driveWebViewLink: existingFile.webViewLink,
         };
         applyServerConfig(restoredState);
-        // Broadcast restored Google Drive state to all devices worldwide via Neon/Turso Edge Store
         await saveToGlobalCloudStore('config', restoredState, now);
+
+        if (driveData.raffleState) {
+          applyCloudRaffleState(driveData.raffleState, now);
+          await saveToGlobalCloudStore('raffles', driveData.raffleState, now);
+        }
       }
 
       setDriveInfo((prev) => ({
@@ -578,7 +897,7 @@ export const CatalogConfigProvider: React.FC<{ children: React.ReactNode }> = ({
         error: err?.message || 'Error al cargar datos desde Google Drive.',
       }));
     }
-  }, [applyServerConfig]);
+  }, [applyServerConfig, applyCloudRaffleState]);
 
   const requestDeleteGoogleDriveBackup = useCallback(async () => {
     try {
@@ -627,6 +946,7 @@ export const CatalogConfigProvider: React.FC<{ children: React.ReactNode }> = ({
           currentConfirmation.fileId,
           {
             ...currentConfirmation.payloadToSave,
+            raffleState: raffleStateRef.current,
             syncedByEngine: 'Neon + Turso + Google Drive Global Edge v3',
           }
         );
@@ -639,6 +959,7 @@ export const CatalogConfigProvider: React.FC<{ children: React.ReactNode }> = ({
         };
 
         await saveToGlobalCloudStore('config', stateWithDriveMeta, stateWithDriveMeta.updatedAt);
+        await saveToGlobalCloudStore('raffles', raffleStateRef.current);
 
         setDriveInfo((prev) => ({
           ...prev,
@@ -688,6 +1009,11 @@ export const CatalogConfigProvider: React.FC<{ children: React.ReactNode }> = ({
       applyServerOrders(cloudOrders);
     });
 
+    const unsubGlobalRaffles = subscribeToGlobalCloudStore('raffles', (cloudRaffles, updatedAt) => {
+      if (!isMounted || !cloudRaffles) return;
+      applyCloudRaffleState(cloudRaffles, updatedAt);
+    });
+
     const reconcileTimer = window.setTimeout(() => {
       if (!isMounted) return;
       try {
@@ -701,6 +1027,19 @@ export const CatalogConfigProvider: React.FC<{ children: React.ReactNode }> = ({
             Object.keys(localParsed.diagnosticPriceOverrides || {}).length > 0;
           if ((hasLocalCustom || hasLocalOverrides) && lastAppliedTimestampRef.current <= (localParsed.updatedAt || 0)) {
             saveToGlobalCloudStore('config', localParsed, localParsed.updatedAt || Date.now()).catch(() => {});
+          }
+        }
+
+        const rawLocalRaffles = localStorage.getItem(LOCAL_RAFFLES_KEY);
+        if (rawLocalRaffles) {
+          const parsedRaffles = sanitizeRaffleState(JSON.parse(rawLocalRaffles));
+          if (
+            (parsedRaffles.drawHistory.length > 0 ||
+              parsedRaffles.currentCycleParticipants.length > 0 ||
+              parsedRaffles.corrections.length > 0) &&
+            lastRaffleTimestampRef.current <= (parsedRaffles.updatedAt || 0)
+          ) {
+            saveToGlobalCloudStore('raffles', parsedRaffles, parsedRaffles.updatedAt || Date.now()).catch(() => {});
           }
         }
       } catch {
@@ -799,15 +1138,15 @@ export const CatalogConfigProvider: React.FC<{ children: React.ReactNode }> = ({
       isMounted = false;
       unsubGlobalConfig();
       unsubGlobalOrders();
+      unsubGlobalRaffles();
       window.clearTimeout(reconcileTimer);
       window.clearInterval(pollInterval);
       window.removeEventListener('visibilitychange', handleVisibilityOrFocus);
       window.removeEventListener('focus', handleVisibilityOrFocus);
       window.removeEventListener('growth-viral-ws-event', handleWsEvent);
     };
-  }, [applyServerConfig, applyServerOrders, persistAdminState]);
+  }, [applyServerConfig, applyServerOrders, applyCloudRaffleState, persistAdminState]);
 
-  // Compute allServicesAdmin (base services + overrides + custom services)
   const allServicesAdmin = useMemo<ServiceItem[]>(() => {
     const mergedBase = SERVICES_DATA.map((baseItem) => {
       const override = adminState.serviceOverrides[baseItem.id];
@@ -1213,8 +1552,10 @@ export const CatalogConfigProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const updateOrderStatus = useCallback(
     async (id: string, status: OrderStatus) => {
+      let updatedOrdersList: OrderRecord[] = [];
       setOrders((prev) => {
         const next = prev.map((o) => (o.id === id ? { ...o, status } : o));
+        updatedOrdersList = next;
         try {
           localStorage.setItem(LOCAL_ORDERS_KEY, JSON.stringify(next));
         } catch {
@@ -1223,6 +1564,11 @@ export const CatalogConfigProvider: React.FC<{ children: React.ReactNode }> = ({
         saveToGlobalCloudStore('orders', next).catch(() => {});
         return next;
       });
+
+      // Immediately evaluate if a $550 order became 'completado'
+      if (updatedOrdersList.length > 0) {
+        evaluateOrdersForRaffle(updatedOrdersList);
+      }
 
       if (apiServerAvailableRef.current) {
         try {
@@ -1240,7 +1586,45 @@ export const CatalogConfigProvider: React.FC<{ children: React.ReactNode }> = ({
         }
       }
     },
-    [applyServerOrders]
+    [applyServerOrders, evaluateOrdersForRaffle]
+  );
+
+  const updateOrderClientLink = useCallback(
+    async (id: string, clientLink: string) => {
+      const cleanLink = clientLink.trim();
+      setOrders((prev) => {
+        const next = prev.map((o) => (o.id === id ? { ...o, clientLink: cleanLink } : o));
+        try {
+          localStorage.setItem(LOCAL_ORDERS_KEY, JSON.stringify(next));
+        } catch {
+          // ignore
+        }
+        saveToGlobalCloudStore('orders', next).catch(() => {});
+        return next;
+      });
+
+      // Also update buyerName & buyerWhatsapp if this order is in currentCycleParticipants
+      const current = raffleStateRef.current;
+      const inCurrentCycle = current.currentCycleParticipants.some((p) => p.orderId === id);
+      if (inCurrentCycle) {
+        const info = extractBuyerInfoFromOrder({ id, clientLink: cleanLink });
+        const nextParticipants = current.currentCycleParticipants.map((p) =>
+          p.orderId === id
+            ? {
+                ...p,
+                buyerName: info.buyerName,
+                buyerWhatsapp: info.buyerWhatsapp,
+                clientLinkRaw: cleanLink,
+              }
+            : p
+        );
+        await persistRaffleState({
+          ...current,
+          currentCycleParticipants: nextParticipants,
+        });
+      }
+    },
+    [persistRaffleState]
   );
 
   const deleteOrder = useCallback(
@@ -1290,6 +1674,180 @@ export const CatalogConfigProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   }, []);
 
+  // ============================================================================
+  // RAFFLE & CREDIT ADMIN ACTIONS (Points A, C, D)
+  // ============================================================================
+
+  const correctRaffleCycleManually = useCallback(
+    async (payload: { orderIdToRemove?: string; reason: string }) => {
+      const cleanReason = payload.reason.trim();
+      if (!cleanReason) return;
+
+      const current = raffleStateRef.current;
+      const now = Date.now();
+      let nextParticipants = [...current.currentCycleParticipants];
+      const nextExcluded = [...current.excludedOrderIds];
+      let removedBuyerName: string | undefined;
+      let removedOrderId: string | undefined;
+      let whatWasCorrected = '';
+
+      if (payload.orderIdToRemove) {
+        const target = nextParticipants.find((p) => p.orderId === payload.orderIdToRemove);
+        if (target) {
+          removedBuyerName = target.buyerName;
+          removedOrderId = target.orderId;
+          const prevCount = nextParticipants.length;
+          nextParticipants = nextParticipants.filter((p) => p.orderId !== payload.orderIdToRemove);
+          if (!nextExcluded.includes(target.orderId)) {
+            nextExcluded.push(target.orderId);
+          }
+          whatWasCorrected = `Ciclo #${current.currentCycleNumber}: Se descontó la venta de "${target.buyerName}" (Pedido #${target.orderId.slice(-6).toUpperCase()}). Contador ajustado de ${prevCount}/2 a ${nextParticipants.length}/2.`;
+        } else {
+          if (!nextExcluded.includes(payload.orderIdToRemove)) {
+            nextExcluded.push(payload.orderIdToRemove);
+          }
+          removedOrderId = payload.orderIdToRemove;
+          whatWasCorrected = `Ciclo #${current.currentCycleNumber}: Se excluyó el pedido #${payload.orderIdToRemove.slice(-6).toUpperCase()} del conteo por cancelación/devolución.`;
+        }
+      } else if (nextParticipants.length > 0) {
+        const lastRemoved = nextParticipants[nextParticipants.length - 1];
+        removedBuyerName = lastRemoved.buyerName;
+        removedOrderId = lastRemoved.orderId;
+        const prevCount = nextParticipants.length;
+        nextParticipants = nextParticipants.slice(0, -1);
+        if (!nextExcluded.includes(lastRemoved.orderId)) {
+          nextExcluded.push(lastRemoved.orderId);
+        }
+        whatWasCorrected = `Ciclo #${current.currentCycleNumber}: Se descontó 1 venta confirmada ("${lastRemoved.buyerName}", Pedido #${lastRemoved.orderId.slice(-6).toUpperCase()}). Contador ajustado de ${prevCount}/2 a ${nextParticipants.length}/2.`;
+      } else {
+        whatWasCorrected = `Ciclo #${current.currentCycleNumber}: Registro de corrección administrativa en contador (0/2).`;
+      }
+
+      const correctionRecord: RaffleCorrectionRecord = {
+        id: `corr-${now}-${Math.random().toString(36).slice(2, 6)}`,
+        createdAt: now,
+        cycleNumber: current.currentCycleNumber,
+        reason: cleanReason,
+        whatWasCorrected,
+        removedOrderId,
+        removedBuyerName,
+      };
+
+      await persistRaffleState({
+        ...current,
+        currentCycleParticipants: nextParticipants,
+        excludedOrderIds: nextExcluded,
+        corrections: [correctionRecord, ...current.corrections],
+        updatedAt: now,
+      });
+    },
+    [persistRaffleState]
+  );
+
+  const recordCreditMonthlyEarnings = useCallback(
+    async (creditId: string, monthLabel: string, reportedEarningsUSD: number) => {
+      const cleanLabel = monthLabel.trim();
+      if (!cleanLabel) return;
+
+      const current = raffleStateRef.current;
+      const now = Date.now();
+      const cleanEarnings = Math.max(0, Number(reportedEarningsUSD) || 0);
+
+      const nextCredits = current.credits.map((credit) => {
+        if (credit.id !== creditId) return credit;
+        if (credit.remainingBalanceUSD <= 0) return credit;
+
+        // Rule 4: Payment = 50% of reported monthly earnings, capped at remainingBalanceUSD.
+        // If reportedEarningsUSD === 0 -> paymentUSD = 0, balance unchanged.
+        const halfEarnings = Number((cleanEarnings * 0.5).toFixed(2));
+        const paymentUSD =
+          cleanEarnings > 0
+            ? Number(Math.min(halfEarnings, credit.remainingBalanceUSD).toFixed(2))
+            : 0;
+        const balanceAfterUSD = Number(
+          Math.max(0, credit.remainingBalanceUSD - paymentUSD).toFixed(2)
+        );
+
+        const newMonth: RaffleCreditMonthRecord = {
+          id: `month-${now}-${Math.random().toString(36).slice(2, 6)}`,
+          monthLabel: cleanLabel,
+          reportedEarningsUSD: cleanEarnings,
+          paymentUSD,
+          balanceAfterUSD,
+          recordedAt: now,
+        };
+
+        const updatedMonths = [...credit.months, newMonth];
+        let nextStatus: RaffleCreditStatus = credit.status;
+        if (balanceAfterUSD <= 0) {
+          nextStatus = 'liquidado';
+        } else if (updatedMonths.some((m) => m.reportedEarningsUSD > 0)) {
+          nextStatus = 'pagando';
+        } else {
+          nextStatus = 'esperando_monetizacion';
+        }
+
+        return {
+          ...credit,
+          remainingBalanceUSD: balanceAfterUSD,
+          status: nextStatus,
+          months: updatedMonths,
+          updatedAt: now,
+        };
+      });
+
+      await persistRaffleState({
+        ...current,
+        credits: nextCredits,
+        updatedAt: now,
+      });
+    },
+    [persistRaffleState]
+  );
+
+  const updateWinnerContactInfo = useCallback(
+    async (creditId: string, winnerName: string, winnerWhatsapp: string) => {
+      const current = raffleStateRef.current;
+      const now = Date.now();
+      const cleanName = winnerName.trim();
+      const cleanWa = winnerWhatsapp.trim();
+
+      const nextCredits = current.credits.map((c) =>
+        c.id === creditId
+          ? {
+              ...c,
+              winnerName: cleanName || c.winnerName,
+              winnerWhatsapp: cleanWa || c.winnerWhatsapp,
+              clientLinkRaw: cleanWa ? `${cleanName || c.winnerName} ${cleanWa}` : c.clientLinkRaw,
+              updatedAt: now,
+            }
+          : c
+      );
+
+      const nextDrawHistory = current.drawHistory.map((d) =>
+        d.creditId === creditId
+          ? {
+              ...d,
+              winner: {
+                ...d.winner,
+                buyerName: cleanName || d.winner.buyerName,
+                buyerWhatsapp: cleanWa || d.winner.buyerWhatsapp,
+                clientLinkRaw: cleanWa ? `${cleanName || d.winner.buyerName} ${cleanWa}` : d.winner.clientLinkRaw,
+              },
+            }
+          : d
+      );
+
+      await persistRaffleState({
+        ...current,
+        credits: nextCredits,
+        drawHistory: nextDrawHistory,
+        updatedAt: now,
+      });
+    },
+    [persistRaffleState]
+  );
+
   const contextValue = useMemo<CatalogConfigContextValue>(
     () => ({
       services,
@@ -1299,6 +1857,7 @@ export const CatalogConfigProvider: React.FC<{ children: React.ReactNode }> = ({
       getDiagnosticPrice,
       paymentConfig: adminState.paymentConfig,
       orders,
+      raffleState,
       driveInfo,
       pendingDriveConfirmation,
       connectGoogleDrive,
@@ -1321,8 +1880,12 @@ export const CatalogConfigProvider: React.FC<{ children: React.ReactNode }> = ({
       resetAllToDefaults,
       recordOrder,
       updateOrderStatus,
+      updateOrderClientLink,
       deleteOrder,
       clearOrders,
+      correctRaffleCycleManually,
+      recordCreditMonthlyEarnings,
+      updateWinnerContactInfo,
     }),
     [
       services,
@@ -1332,6 +1895,7 @@ export const CatalogConfigProvider: React.FC<{ children: React.ReactNode }> = ({
       getDiagnosticPrice,
       adminState.paymentConfig,
       orders,
+      raffleState,
       driveInfo,
       pendingDriveConfirmation,
       connectGoogleDrive,
@@ -1354,8 +1918,12 @@ export const CatalogConfigProvider: React.FC<{ children: React.ReactNode }> = ({
       resetAllToDefaults,
       recordOrder,
       updateOrderStatus,
+      updateOrderClientLink,
       deleteOrder,
       clearOrders,
+      correctRaffleCycleManually,
+      recordCreditMonthlyEarnings,
+      updateWinnerContactInfo,
     ]
   );
 
