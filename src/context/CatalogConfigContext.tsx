@@ -217,6 +217,7 @@ interface CatalogConfigContextValue {
     winnerName: string,
     winnerWhatsapp: string
   ) => Promise<void>;
+  resetRaffleState: () => Promise<void>;
 }
 
 const CatalogConfigContext = createContext<CatalogConfigContextValue | undefined>(undefined);
@@ -368,11 +369,11 @@ export const CatalogConfigProvider: React.FC<{ children: React.ReactNode }> = ({
     const ts = incomingUpdatedAt || incoming.updatedAt || 0;
 
     const current = raffleStateRef.current;
-    // Never overwrite with an older state that has fewer completed draws or lower timestamp
-    if (ts > 0 && ts < lastRaffleTimestampRef.current && incoming.drawHistory.length <= current.drawHistory.length) {
+    // Never overwrite with an older timestamp
+    if (ts > 0 && ts < lastRaffleTimestampRef.current) {
       return;
     }
-    if (incoming.drawHistory.length < current.drawHistory.length) {
+    if (ts === 0 && incoming.drawHistory.length < current.drawHistory.length) {
       return;
     }
 
@@ -1848,6 +1849,26 @@ export const CatalogConfigProvider: React.FC<{ children: React.ReactNode }> = ({
     [persistRaffleState]
   );
 
+  const resetRaffleState = useCallback(async () => {
+    const now = Date.now();
+    const initialRaffleState: RaffleSystemState = {
+      currentCycleNumber: 1,
+      currentCycleParticipants: [],
+      consumedOrderIds: [],
+      excludedOrderIds: [],
+      drawHistory: [],
+      credits: [],
+      corrections: [],
+      updatedAt: now,
+    };
+
+    await persistRaffleState(initialRaffleState);
+
+    if (hasInMemoryAccessToken()) {
+      await queueOrCreateGoogleDriveSync(adminState);
+    }
+  }, [persistRaffleState, queueOrCreateGoogleDriveSync, adminState]);
+
   const contextValue = useMemo<CatalogConfigContextValue>(
     () => ({
       services,
@@ -1886,6 +1907,7 @@ export const CatalogConfigProvider: React.FC<{ children: React.ReactNode }> = ({
       correctRaffleCycleManually,
       recordCreditMonthlyEarnings,
       updateWinnerContactInfo,
+      resetRaffleState,
     }),
     [
       services,
@@ -1924,6 +1946,7 @@ export const CatalogConfigProvider: React.FC<{ children: React.ReactNode }> = ({
       correctRaffleCycleManually,
       recordCreditMonthlyEarnings,
       updateWinnerContactInfo,
+      resetRaffleState,
     ]
   );
 

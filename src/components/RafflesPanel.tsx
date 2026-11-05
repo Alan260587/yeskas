@@ -40,7 +40,12 @@ export const RafflesPanel: React.FC<RafflesPanelProps> = ({ onShowToast }) => {
     correctRaffleCycleManually,
     recordCreditMonthlyEarnings,
     updateWinnerContactInfo,
+    resetRaffleState,
   } = useCatalogConfig();
+
+  // State for resetting entire raffle system (limpiar pruebas)
+  const [showResetConfirm, setShowResetConfirm] = useState<boolean>(false);
+  const [isResettingRaffles, setIsResettingRaffles] = useState<boolean>(false);
 
   // State for manual counter correction form (Point A)
   const [selectedOrderToRemove, setSelectedOrderToRemove] = useState<string>('');
@@ -64,6 +69,23 @@ export const RafflesPanel: React.FC<RafflesPanelProps> = ({ onShowToast }) => {
 
   const notify = (msg: string) => {
     if (onShowToast) onShowToast(msg);
+  };
+
+  const handleConfirmResetRaffles = async () => {
+    setIsResettingRaffles(true);
+    try {
+      await resetRaffleState();
+      setShowResetConfirm(false);
+      setSelectedOrderToRemove('');
+      setCorrectionReason('');
+      setCorrectionError(null);
+      setEditingWinnerId(null);
+      notify(
+        'Estado de sorteos restablecido a su estado inicial (Ciclo #1, contador 0/2, 0 sorteos, 0 créditos) y sincronizado en todos los dispositivos.'
+      );
+    } finally {
+      setIsResettingRaffles(false);
+    }
   };
 
   const copyText = (key: string, text: string) => {
@@ -283,6 +305,60 @@ export const RafflesPanel: React.FC<RafflesPanelProps> = ({ onShowToast }) => {
               </div>
             </div>
           </div>
+        </div>
+
+        {/* Admin Reset Action Bar (Restablecer estado de sorteos / limpiar pruebas) */}
+        <div className="pt-2 border-t border-amber-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+          <div className="text-[11px] text-zinc-400">
+            ¿Hiciste pruebas y deseas iniciar desde cero en todos los dispositivos?
+          </div>
+          {!showResetConfirm ? (
+            <button
+              type="button"
+              onClick={() => setShowResetConfirm(true)}
+              className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/40 text-xs font-black transition cursor-pointer shrink-0"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Restablecer estado de sorteos (limpiar pruebas)</span>
+            </button>
+          ) : (
+            <div className="w-full sm:w-auto bg-rose-950/60 border border-rose-500/50 rounded-xl p-3 space-y-2.5">
+              <div className="flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                <div className="text-[11px] text-rose-100 leading-relaxed">
+                  <strong>¿Confirmas restablecer el sistema de sorteos a su estado inicial?</strong>
+                  <p className="text-rose-200/90 mt-0.5">
+                    Se borrarán todos los datos de sorteos (volverá a <strong>Ciclo #1</strong>, contador{' '}
+                    <strong>0/2</strong>, sin sorteos realizados, sin fichas de crédito, sin correcciones manuales y
+                    sin pedidos ya sorteados registrados) y se sincronizará en localStorage, MQTT global y Google Drive.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  disabled={isResettingRaffles}
+                  onClick={() => setShowResetConfirm(false)}
+                  className="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-bold transition cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  disabled={isResettingRaffles}
+                  onClick={handleConfirmResetRaffles}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 disabled:opacity-50 text-white text-xs font-black transition cursor-pointer shadow-lg shadow-rose-950/50"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>
+                    {isResettingRaffles
+                      ? 'Restableciendo...'
+                      : 'Sí, restablecer estado de sorteos'}
+                  </span>
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
