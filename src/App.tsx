@@ -435,6 +435,7 @@ function AppContent() {
             searchQuery={searchQuery}
             onSearchChange={setSearchQuery}
             counts={counts}
+            filteredCount={filteredServices.length}
           />
 
           {/* Products Grid */}

@@ -8,6 +8,7 @@ interface NetworkFilterProps {
   searchQuery: string;
   onSearchChange: (query: string) => void;
   counts: Record<string, number>;
+  filteredCount?: number;
 }
 
 export const NetworkFilter: React.FC<NetworkFilterProps> = ({
@@ -16,6 +17,7 @@ export const NetworkFilter: React.FC<NetworkFilterProps> = ({
   searchQuery,
   onSearchChange,
   counts,
+  filteredCount,
 }) => {
   const categories: Array<{ id: string; label: string; icon: string; countKey: string }> = [
     { id: 'all', label: 'Todo el Catálogo', icon: '✨', countKey: 'all' },
@@ -26,6 +28,9 @@ export const NetworkFilter: React.FC<NetworkFilterProps> = ({
     { id: 'facebook', label: 'Facebook', icon: '📘', countKey: 'facebook' },
     { id: 'kick', label: 'Kick Streaming', icon: '🎮', countKey: 'kick' },
   ];
+
+  const visibleCount =
+    typeof filteredCount === 'number' ? filteredCount : counts[activeCategory] || 0;
 
   return (
     <div className="space-y-4 mb-8">
@@ -52,7 +57,7 @@ export const NetworkFilter: React.FC<NetworkFilterProps> = ({
 
         <div className="text-xs text-zinc-300 self-end sm:self-auto font-medium flex items-center gap-1.5">
           <Sparkles className="w-3.5 h-3.5 text-purple-400" />
-          <span>Mostrando {counts[activeCategory] || 0} opciones disponibles</span>
+          <span>Mostrando {visibleCount} opciones disponibles</span>
         </div>
       </div>
 

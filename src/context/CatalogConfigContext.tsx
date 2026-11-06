@@ -86,7 +86,7 @@ const INITIAL_CUSTOM_SERVICES: ServiceItem[] = [
     metric: '100mil',
     price: 200,
     unit: '100mil',
-    description: '100mil vista  y 19mil oyentes',
+    description: '100mil vista y 10mil oyentes',
     popular: true,
     tag: 'Nuevo',
     deliveryTime: '48 a 72 horas',
@@ -1152,7 +1152,7 @@ export const CatalogConfigProvider: React.FC<{ children: React.ReactNode }> = ({
     const mergedBase = SERVICES_DATA.map((baseItem) => {
       const override = adminState.serviceOverrides[baseItem.id];
       if (!override) return baseItem;
-      return {
+      const merged = {
         ...baseItem,
         ...override,
         price:
@@ -1160,6 +1160,14 @@ export const CatalogConfigProvider: React.FC<{ children: React.ReactNode }> = ({
             ? override.price
             : baseItem.price,
       };
+      if (
+        merged.image &&
+        (merged.image.includes('photo-1552824796-031f8be357e6') ||
+          merged.image.includes('photo-1534972195531-a756b1126f24'))
+      ) {
+        merged.image = baseItem.image;
+      }
+      return merged;
     });
 
     const customItems = (adminState.customServices || []).map((custom) => {
@@ -1169,6 +1177,13 @@ export const CatalogConfigProvider: React.FC<{ children: React.ReactNode }> = ({
         ...(override || {}),
         isCustom: true,
       };
+      if (
+        merged.id === 'custom-spotify-1793035914804' &&
+        typeof merged.description === 'string' &&
+        /19\s*mil\s+oyentes/i.test(merged.description)
+      ) {
+        merged.description = '100mil vista y 10mil oyentes';
+      }
       if (!merged.image || !merged.image.trim()) {
         merged.image = DEFAULT_NETWORK_IMAGES[merged.network] || DEFAULT_NETWORK_IMAGES.instagram;
       }

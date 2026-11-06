@@ -1019,6 +1019,13 @@ export const AdminSessionModal: React.FC<AdminSessionModalProps> = ({
                               src={previewImg}
                               alt={service.name}
                               className="w-12 h-12 rounded-xl object-cover border border-zinc-700 shrink-0 bg-zinc-950"
+                              onError={(e) => {
+                                const fallback =
+                                  'https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?auto=format&fit=crop&w=240&q=70';
+                                if (e.currentTarget.src !== fallback) {
+                                  e.currentTarget.src = fallback;
+                                }
+                              }}
                             />
                             <span
                               className={`text-[10px] font-black px-2.5 py-1 rounded-lg uppercase tracking-wider shrink-0 ${netInfo.badgeColor}`}
@@ -1232,6 +1239,13 @@ export const AdminSessionModal: React.FC<AdminSessionModalProps> = ({
                               src={previewImg}
                               alt={offer.title}
                               className="w-12 h-12 rounded-xl object-cover border border-zinc-700 shrink-0 bg-zinc-950"
+                              onError={(e) => {
+                                const fallback =
+                                  'https://images.unsplash.com/photo-1611162616305-c69b3fa7fbe0?auto=format&fit=crop&w=240&q=70';
+                                if (e.currentTarget.src !== fallback) {
+                                  e.currentTarget.src = fallback;
+                                }
+                              }}
                             />
                             <div>
                               <div className="text-xs sm:text-sm font-bold text-white flex items-center gap-2 flex-wrap">
@@ -1447,11 +1461,18 @@ export const AdminSessionModal: React.FC<AdminSessionModalProps> = ({
                 {/* Image Upload / URL Draft Selector for New Project */}
                 <div className="bg-zinc-950/90 border border-zinc-800 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div className="flex items-center gap-3 flex-1">
-                    {newProdImage ? (
+                    {newProdImage.trim() ? (
                       <img
-                        src={newProdImage}
+                        src={newProdImage.trim()}
                         alt="Vista previa"
                         className="w-12 h-12 rounded-xl object-cover border border-purple-500/50 shrink-0"
+                        onError={(e) => {
+                          const fallback =
+                            'https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?auto=format&fit=crop&w=240&q=70';
+                          if (e.currentTarget.src !== fallback) {
+                            e.currentTarget.src = fallback;
+                          }
+                        }}
                       />
                     ) : (
                       <div className="w-12 h-12 rounded-xl bg-zinc-900 border border-zinc-800 flex items-center justify-center text-zinc-500 shrink-0">
@@ -1622,11 +1643,18 @@ export const AdminSessionModal: React.FC<AdminSessionModalProps> = ({
                             {/* Draft Image Editor inside Edit Row */}
                             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-zinc-900/90 border border-zinc-800 rounded-lg p-2">
                               <div className="flex items-center gap-2.5 flex-1">
-                                {editServiceDraft.image && (
+                                {editServiceDraft.image && editServiceDraft.image.trim() && (
                                   <img
-                                    src={editServiceDraft.image}
+                                    src={editServiceDraft.image.trim()}
                                     alt={editServiceDraft.name}
                                     className="w-10 h-10 rounded-lg object-cover border border-zinc-700 shrink-0"
+                                    onError={(e) => {
+                                      const fallback =
+                                        'https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?auto=format&fit=crop&w=240&q=70';
+                                      if (e.currentTarget.src !== fallback) {
+                                        e.currentTarget.src = fallback;
+                                      }
+                                    }}
                                   />
                                 )}
                                 <input
@@ -1688,11 +1716,18 @@ export const AdminSessionModal: React.FC<AdminSessionModalProps> = ({
                         ) : (
                           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                             <div className="flex items-center gap-2.5">
-                              {service.image && (
+                              {service.image && service.image.trim() && (
                                 <img
-                                  src={service.image}
+                                  src={service.image.trim()}
                                   alt={service.name}
                                   className="w-9 h-9 rounded-lg object-cover border border-zinc-800 shrink-0"
+                                  onError={(e) => {
+                                    const fallback =
+                                      'https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?auto=format&fit=crop&w=240&q=70';
+                                    if (e.currentTarget.src !== fallback) {
+                                      e.currentTarget.src = fallback;
+                                    }
+                                  }}
                                 />
                               )}
                               <span

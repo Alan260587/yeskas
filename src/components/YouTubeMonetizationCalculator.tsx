@@ -664,9 +664,10 @@ export const YouTubeMonetizationCalculator: React.FC<YouTubeMonetizationCalculat
       const currentFollowers = metricValues['kick-followers'] ?? 35;
       const streamHours = metricValues['kick-streamHours'] ?? 2;
       const missingFollowers = Math.max(0, 100 - currentFollowers);
+      const missingHours = Math.max(0, 5 - streamHours);
 
       metricsSummary.push({ label: 'Seguidores', current: currentFollowers, missing: missingFollowers, target: 100, unit: 'seguidores' });
-      metricsSummary.push({ label: 'Horas de directo', current: streamHours, missing: 0, target: 5, unit: 'horas' });
+      metricsSummary.push({ label: 'Horas de directo', current: streamHours, missing: missingHours, target: 5, unit: 'horas' });
 
       if (missingFollowers > 0) {
         const price = getDiagnosticPrice('diag-kick-100subs', 5);
@@ -1251,11 +1252,12 @@ export const YouTubeMonetizationCalculator: React.FC<YouTubeMonetizationCalculat
             <div className="space-y-3 mb-4">
               {planDiagnostic.metricsSummary.map((m, idx) => {
                 const perc = Math.min(100, Math.round((m.current / m.target) * 100));
+                const isGoalMet = m.current >= m.target && m.missing <= 0;
                 return (
                   <div key={idx} className="bg-zinc-950/90 border border-zinc-800 rounded-2xl p-3.5">
                     <div className="flex items-center justify-between text-xs">
                       <span className="text-zinc-400">{m.label}:</span>
-                      {m.missing === 0 ? (
+                      {isGoalMet ? (
                         <span className="text-emerald-400 font-bold">¡Meta Cumplida!</span>
                       ) : (
                         <span className="text-white font-bold">

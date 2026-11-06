@@ -170,6 +170,13 @@ export const SpecialOffers: React.FC<SpecialOffersProps> = React.memo(
                       loading="lazy"
                       decoding="async"
                       className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity duration-200"
+                      onError={(e) => {
+                        const fallback =
+                          'https://images.unsplash.com/photo-1611162616305-c69b3fa7fbe0?auto=format&fit=crop&w=480&q=75';
+                        if (e.currentTarget.src !== fallback) {
+                          e.currentTarget.src = fallback;
+                        }
+                      }}
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-zinc-900 via-zinc-900/40 to-transparent" />
 

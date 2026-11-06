@@ -176,6 +176,24 @@ export const ProductCard: React.FC<ProductCardProps> = React.memo(
             className="w-full h-full object-cover opacity-85 group-hover:opacity-100 transition-opacity duration-200"
             loading="lazy"
             decoding="async"
+            onError={(e) => {
+              const target = e.currentTarget;
+              const fallback =
+                service.network === 'kick'
+                  ? 'https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=480&q=75'
+                  : service.network === 'spotify'
+                  ? 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?auto=format&fit=crop&w=480&q=75'
+                  : service.network === 'youtube'
+                  ? 'https://images.unsplash.com/photo-1526778548025-fa2f459cd5c1?auto=format&fit=crop&w=480&q=75'
+                  : service.network === 'tiktok'
+                  ? 'https://images.unsplash.com/photo-1611605698335-8b1569810432?auto=format&fit=crop&w=480&q=75'
+                  : service.network === 'facebook'
+                  ? 'https://images.unsplash.com/photo-1562577309-4932fdd64cd1?auto=format&fit=crop&w=480&q=75'
+                  : 'https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?auto=format&fit=crop&w=480&q=75';
+              if (target.src !== fallback) {
+                target.src = fallback;
+              }
+            }}
           />
 
           {/* Gradient Overlay */}

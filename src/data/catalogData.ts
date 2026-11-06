@@ -425,7 +425,7 @@ export const SERVICES_DATA: ServiceItem[] = [
     tag: 'Súper Promo 3K',
     deliveryTime: '48 a 72 horas',
     guarantee: 'Garantía 30D',
-    image: 'https://images.unsplash.com/photo-1534972195531-a756b1126f24?auto=format&fit=crop&w=800&q=80',
+    image: 'https://images.unsplash.com/photo-1611605698335-8b1569810432?auto=format&fit=crop&w=800&q=80',
   },
   {
     id: 'tt-saves',
@@ -763,7 +763,7 @@ export const SERVICES_DATA: ServiceItem[] = [
     description: 'Alcanza el nivel de afiliado de Kick más rápido.',
     deliveryTime: '48 a 72 horas',
     guarantee: 'Garantía 30D',
-    image: 'https://images.unsplash.com/photo-1552824796-031f8be357e6?auto=format&fit=crop&w=800&q=80',
+    image: 'https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=800&q=80',
   },
   {
     id: 'kick-seg-500',
